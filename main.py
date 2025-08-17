@@ -19,7 +19,7 @@ def get_instrument_metadata(symbol: str):
     return metadata
 
 
-def get_news(symbol: str, days: int = 3, max_items: int = 8):
+def get_news(symbol: list, days: int = 3, max_items: int = 8):
     instrument = yf.Ticker(symbol)
     info = instrument.info or {}
     company_name = info.get("shortName") or info.get(
@@ -27,33 +27,30 @@ def get_news(symbol: str, days: int = 3, max_items: int = 8):
 
     company_uri = er.getConceptUri(company_name)
 
-    finance_sources = ["Reuters", "Bloomberg", "CNBC",
-                       "Yahoo Finance", "Financial Times", "The Wall Street Journal"]
-    source_uris = [er.getSourceUri(s)
-                   for s in finance_sources if er.getSourceUri(s)]
-
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    date_end = now_utc.date().isoformat()
-    date_start = (now_utc - datetime.timedelta(days=days)).date().isoformat()
-
-    q = QueryArticlesIter(
-        conceptUri=company_uri,
-        lang=["eng"],
-        isDuplicateFilter="skipDuplicates",
-        startSourceRankPercentile=70,
-        endSourceRankPercentile=100,
-        sourceUri=QueryItems.OR(source_uris) if source_uris else None,
-        dateStart=date_start,
-        dateEnd=date_end,
-        keywordsLoc="title"   # <-- corrected
-    )
-
-    retinfo = ReturnInfo(articleInfo=ArticleInfoFlags(
-        concepts=False, categories=False, location=False, image=True
-    ))
+    query = {
+        "$query": {
+            "$and": [
+                {"conceptUri": company_uri},   # <-- disambiguated Apple Inc.
+                {"lang": "eng"},
+                {"$or": [
+                    {"sourceUri": "reuters.com"},
+                    {"sourceUri": "bloomberg.com"},
+                    {"sourceUri": "cnbc.com"},
+                    {"sourceUri": "finance.yahoo.com"},
+                    {"sourceUri": "wsj.com"},
+                    {"sourceUri": "ft.com"}
+                ]}
+            ]
+        },
+        "$filter": {
+            "forceMaxDataTimeWindow": "7"   # last 7 days
+        }
+    }
 
     articles = []
-    for article in q.execQuery(er, sortBy="date", sortByAsc=False, returnInfo=retinfo, maxItems=max_items):
+
+    q = QueryArticlesIter.initWithComplexQuery(query)
+    for article in q.execQuery(er, maxItems=20):
         articles.append({
             "title": article.get("title"),
             "url": article.get("url"),
@@ -62,7 +59,20 @@ def get_news(symbol: str, days: int = 3, max_items: int = 8):
             "image": article.get("image"),
             "body": article.get("body")
         })
+
     return articles
 
 
-print(get_news("AAPL"))
+def get_news_combined(symbols, max_items=50, days=7):
+    """
+    Returns a single list of articles across ALL symbols (mixed river).
+    """
+    symbols_clean = [symbol.strip().upper()
+                     for symbol in symbols if symbol.strip()]
+    if not symbols_clean:
+        return []
+
+    instrument = yf.Ticker(" ".join(symbols_clean))
+
+
+print(get_news(input("What instruments are you interested in? ")))
