@@ -99,7 +99,7 @@ def normalize_symbols(symbols):
     raise ValueError("Symbols must be a list or string")
 
 
-def get_news_combined(symbols, max_items=50, days=7):
+def build_mixed_feed(symbols, max_items=50, days=7):
     """
     Returns a combined list of articles across ALL symbols.
     """
@@ -143,7 +143,8 @@ def get_news_combined(symbols, max_items=50, days=7):
     query = {
         "$query": {
             "$and": [
-                {"conceptUri": concept_uris},   # disambiguated company concept
+                # disambiguated company concept
+                {"conceptUri": {"$or": concept_uris}},
                 {"lang": "eng"},
                 {"$or": [
                     {"sourceUri": "reuters.com"},
@@ -160,6 +161,8 @@ def get_news_combined(symbols, max_items=50, days=7):
         }
     }
 
+    import json
+
     articles = []
 
     q = QueryArticlesIter.initWithComplexQuery(query)
@@ -174,9 +177,13 @@ def get_news_combined(symbols, max_items=50, days=7):
             "body": article.get("body")
         })
 
-    return articles
+    # --- Write to file ---
+    with open("articles.json", "w", encoding="utf-8") as f:
+        json.dump(articles, f, ensure_ascii=False, indent=2)
+
     print(articles)
+    return articles
 
 
 # --- Run example ---
-get_news_combined(input("Enter tickers (e.g., AAPL, NVDA): "))
+build_mixed_feed(input("Enter tickers (e.g., AAPL, NVDA): "))
