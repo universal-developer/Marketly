@@ -1,8 +1,9 @@
 import datetime
 import os
-from dotenv import load_dotenv, find_dotenv
 import yfinance as yf
+import json
 from eventregistry import *
+from dotenv import load_dotenv, find_dotenv
 
 # --- Load API keys ---
 load_dotenv(find_dotenv())
@@ -99,46 +100,102 @@ def normalize_symbols(symbols):
     raise ValueError("Symbols must be a list or string")
 
 
-def build_mixed_feed(symbols, max_items=50, days=7):
+def tickers_to_concept_uris(symbols):
     """
-    Returns a combined list of articles across ALL symbols.
+    Given a list/string of symbols, return (company_names, concept_uris).
+    Example:
+        (["Apple Inc.", "NVIDIA Corporation"],
+        ["http://en.wikipedia.org/wiki/Apple_Inc.", "http://en.wikipedia.org/wiki/Nvidia"])
     """
-
-    # Step 1 — normalize input
+    # Normalize input
     symbols_clean = normalize_symbols(symbols)
-
     if not symbols_clean:
-        return []
-    print("Symbols:", symbols_clean)
+        return [], []
 
-    # Step 2 — get ticker objects
+    # Get ticker objects
     tickers = [yf.Ticker(symbol) for symbol in symbols_clean]
 
-    # Step 3 — resolve company names
+    # Resolve company names
     company_names = []
-
     for ticker in tickers:
         info = ticker.info or {}
         company_name = info.get("shortName") or \
             info.get("longName") or \
             info.get("displayName")
-
         if company_name:
             company_names.append(company_name)
 
-    print("Company names:", company_names)
-
-    # Step 4 — map names to concept URIs
+    # Map names to concept URIs
     concept_uris = []
-
     for name in company_names:
         uri = er.getConceptUri(name)
         if uri:
             concept_uris.append(uri)
 
-    print("Concept URIs:", concept_uris)
+    return company_names, concept_uris
 
-    # Step 5 — (TODO) Fetch articles for all concept URIs
+
+def get_news_grouped(symbols, max_items=50, days=7, output_file="grouped_articles.json"):
+    """
+    Returns a dict of articles grouped by company name,
+    and writes it to a JSON file.
+    """
+    company_names, concept_uris = tickers_to_concept_uris(symbols)
+
+    grouped_articles = {}
+
+    for name, concept_uri in zip(company_names, concept_uris):
+        query = {
+            "$query": {
+                "$and": [
+                    {"conceptUri": concept_uri},
+                    {"lang": "eng"},
+                    {"$or": [
+                        {"sourceUri": "reuters.com"},
+                        {"sourceUri": "bloomberg.com"},
+                        {"sourceUri": "cnbc.com"},
+                        {"sourceUri": "finance.yahoo.com"},
+                        {"sourceUri": "wsj.com"},
+                        {"sourceUri": "ft.com"}
+                    ]}
+                ]
+            },
+            "$filter": {
+                "forceMaxDataTimeWindow": str(days)
+            }
+        }
+
+        company_articles = []
+        q = QueryArticlesIter.initWithComplexQuery(query)
+
+        for article in q.execQuery(er, maxItems=max_items):
+            company_articles.append({
+                "title": article.get("title"),
+                "url": article.get("url"),
+                "source": article.get("source", {}).get("title"),
+                "dateTime": article.get("dateTime"),
+                "image": article.get("image"),
+                "body": article.get("body")
+            })
+
+        grouped_articles[name] = company_articles
+
+    # --- Write output to JSON ---
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(grouped_articles, f, ensure_ascii=False, indent=2)
+
+    print(f"✅ Saved grouped articles to {output_file}")
+    return grouped_articles
+
+
+def get_news_mixed(symbols, max_items=10, days=3):
+    """
+    Returns a combined list of articles across ALL symbols.
+    """
+
+    company_names, concept_uris = tickers_to_concept_uris(symbols)
+
+    # print("Concept URIs:", concept_uris)
 
     query = {
         "$query": {
@@ -161,8 +218,6 @@ def build_mixed_feed(symbols, max_items=50, days=7):
         }
     }
 
-    import json
-
     articles = []
 
     q = QueryArticlesIter.initWithComplexQuery(query)
@@ -178,12 +233,12 @@ def build_mixed_feed(symbols, max_items=50, days=7):
         })
 
     # --- Write to file ---
-    with open("articles.json", "w", encoding="utf-8") as f:
+    with open("mixed_articles.json", "w", encoding="utf-8") as f:
         json.dump(articles, f, ensure_ascii=False, indent=2)
 
-    print(articles)
     return articles
 
 
 # --- Run example ---
-build_mixed_feed(input("Enter tickers (e.g., AAPL, NVDA): "))
+get_news_mixed(input("Enter tickers (e.g., AAPL, NVDA): "))
+# get_news_grouped(input("Enter tickers (e.g., AAPL, NVDA): "))

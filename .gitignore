@@ -1,3 +1,4 @@
 .env
 .venv
-articles.json
+grouped_articles.json
+mixed_articles.json
