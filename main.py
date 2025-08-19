@@ -14,7 +14,6 @@ er = EventRegistry(apiKey=NEWS_API_KEY, allowUseOfArchive=False)
 
 
 # --- Helper functions ---
-
 def get_instrument_metadata(symbol: str):
     """
     Fetch metadata for a single instrument (ticker).
@@ -22,56 +21,6 @@ def get_instrument_metadata(symbol: str):
     instrument = yf.Ticker(symbol)
     metadata = [instrument.info]
     return metadata
-
-
-def get_news(symbol: str, days: int = 3, max_items: int = 8):
-    """
-    Fetch news for a single company based on its ticker symbol.
-    """
-    instrument = yf.Ticker(symbol)
-    info = instrument.info or {}
-
-    company_name = info.get("shortName") or \
-        info.get("longName") or \
-        info.get("displayName") or \
-        symbol
-
-    company_uri = er.getConceptUri(company_name)
-
-    query = {
-        "$query": {
-            "$and": [
-                {"conceptUri": company_uri},   # disambiguated company concept
-                {"lang": "eng"},
-                {"$or": [
-                    {"sourceUri": "reuters.com"},
-                    {"sourceUri": "bloomberg.com"},
-                    {"sourceUri": "cnbc.com"},
-                    {"sourceUri": "finance.yahoo.com"},
-                    {"sourceUri": "wsj.com"},
-                    {"sourceUri": "ft.com"}
-                ]}
-            ]
-        },
-        "$filter": {
-            "forceMaxDataTimeWindow": str(days)   # e.g., "3" → last 3 days
-        }
-    }
-
-    articles = []
-    q = QueryArticlesIter.initWithComplexQuery(query)
-
-    for article in q.execQuery(er, maxItems=max_items):
-        articles.append({
-            "title": article.get("title"),
-            "url": article.get("url"),
-            "source": article.get("source", {}).get("title"),
-            "dateTime": article.get("dateTime"),
-            "image": article.get("image"),
-            "body": article.get("body")
-        })
-
-    return articles
 
 
 def normalize_symbols(symbols):
@@ -133,6 +82,69 @@ def tickers_to_concept_uris(symbols):
             concept_uris.append(uri)
 
     return company_names, concept_uris
+
+
+# --- News fetrching functions ---
+
+
+def get_news(symbol: str, days: int = 3, max_items: int = 8, output_file="single_company_articles.json"):
+    """
+    Fetch news for a single company based on its ticker symbol.
+    Saves results to a JSON file.
+    """
+
+    # Resolve company name from Yahoo Finance
+    ticker = yf.Ticker(symbol)
+    info = ticker.info or {}
+    company_name = info.get("shortName") or info.get(
+        "longName") or info.get("displayName") or symbol
+
+    # Map to Event Registry concept
+    company_uri = er.getConceptUri(company_name)
+    if not company_uri:
+        print(f"⚠️ Could not resolve concept for {symbol} ({company_name})")
+        return []
+
+    query = {
+        "$query": {
+            "$and": [
+                {"conceptUri": company_uri},  # single company concept
+                {"lang": "eng"},
+                {"$or": [
+                    {"sourceUri": "reuters.com"},
+                    {"sourceUri": "bloomberg.com"},
+                    {"sourceUri": "cnbc.com"},
+                    {"sourceUri": "finance.yahoo.com"},
+                    {"sourceUri": "wsj.com"},
+                    {"sourceUri": "ft.com"}
+                ]}
+            ]
+        },
+        "$filter": {"forceMaxDataTimeWindow": str(days)}
+    }
+
+    # Collect articles
+    articles = []
+    q = QueryArticlesIter.initWithComplexQuery(query)
+
+    for article in q.execQuery(er, maxItems=max_items):
+        articles.append({
+            "company_name": company_name,
+            "title": article.get("title"),
+            "url": article.get("url"),
+            "source": article.get("source", {}).get("title"),
+            "dateTime": article.get("dateTime"),
+            "image": article.get("image"),
+            "body": article.get("body")
+        })
+
+    # Save results to JSON
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(articles, f, ensure_ascii=False, indent=2)
+
+    print(
+        f"✅ Saved {len(articles)} articles for {company_name} → {output_file}")
+    return articles
 
 
 def get_news_grouped(symbols, max_items=50, days=7, output_file="grouped_articles.json"):
@@ -240,5 +252,6 @@ def get_news_mixed(symbols, max_items=10, days=3):
 
 
 # --- Run example ---
-get_news_mixed(input("Enter tickers (e.g., AAPL, NVDA): "))
+get_news(input("Enter tickers (e.g., AAPL): "))
+# get_news_mixed(input("Enter tickers (e.g., AAPL, NVDA): "))
 # get_news_grouped(input("Enter tickers (e.g., AAPL, NVDA): "))

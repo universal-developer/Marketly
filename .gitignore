@@ -1,4 +1,5 @@
 .env
 .venv
+single_company_articles_json
 grouped_articles.json
 mixed_articles.json
