@@ -1,6 +1,7 @@
 import datetime
 import os
 import yfinance as yf
+import fmpsdk
 import json
 from eventregistry import *
 from dotenv import load_dotenv, find_dotenv
@@ -8,19 +9,70 @@ from dotenv import load_dotenv, find_dotenv
 # --- Load API keys ---
 load_dotenv(find_dotenv())
 NEWS_API_KEY = os.getenv("EVENT_REGISTERY_API_KEY")
+FINANCIALS_API_KEY = os.getenv("FMPSDK_API_KEY")
 
 # Initialize Event Registry client
 er = EventRegistry(apiKey=NEWS_API_KEY, allowUseOfArchive=False)
 
+YF_TO_FMP_EXCHANGE = {
+    # --- United States ---
+    "NMS": "NASDAQ",          # NASDAQ Stock Market
+    "NasdaqGS": "NASDAQ",     # NASDAQ Global Select
+    "NasdaqCM": "NASDAQ",     # NASDAQ Capital Market
+    "NasdaqGM": "NASDAQ",     # NASDAQ Global Market
+    "NYQ": "NYSE",            # New York Stock Exchange
+    "NYE": "NYSE",            # NYSE (alt code)
+    "ASE": "AMEX",            # American Stock Exchange
+    "PCX": "NYSEARCA",        # NYSE Arca (ETFs)
+    "BATS": "BATS",           # BATS Global Markets
+
+    # --- Canada ---
+    "TOR": "TSX",             # Toronto Stock Exchange
+    "VAN": "TSXV",            # TSX Venture Exchange
+
+    # --- Europe: Euronext (multi-country) ---
+    "PAR": "EURONEXT",        # Euronext Paris
+    "AMS": "EURONEXT",        # Euronext Amsterdam
+    "BRU": "EURONEXT",        # Euronext Brussels
+    "LIS": "EURONEXT",        # Euronext Lisbon
+    "OSL": "OSLO",            # Oslo Børs (Euronext-owned)
+
+    # --- United Kingdom ---
+    "LSE": "LSE",             # London Stock Exchange
+    "IOB": "LSE",             # London Intl Order Book
+
+    # --- Germany ---
+    "GER": "XETRA",           # Deutsche Börse XETRA
+    "FRA": "FRA",             # Frankfurt Stock Exchange
+
+    # --- Switzerland ---
+    "SWX": "SIX",             # SIX Swiss Exchange
+
+    # --- Asia: Japan ---
+    "JPX": "JPX",             # Japan Exchange Group
+    "TSE": "TSE",             # Tokyo Stock Exchange
+
+    # --- Asia: Hong Kong / China ---
+    "HKG": "HKEX",            # Hong Kong Stock Exchange
+    "SHH": "SSE",             # Shanghai Stock Exchange
+    "SHZ": "SZSE",            # Shenzhen Stock Exchange
+
+    # --- Asia: India ---
+    "BSE": "BSE",             # Bombay Stock Exchange
+    "NSE": "NSE",             # National Stock Exchange of India
+
+    # --- Australia & Oceania ---
+    "ASX": "ASX",             # Australian Securities Exchange
+    "NZX": "NZX",             # New Zealand Exchange
+
+    # --- Other ---
+    "MIL": "MILAN",           # Borsa Italiana (Milan)
+    "MAD": "BME",             # Madrid Stock Exchange (BME)
+    "SAO": "B3",              # B3 Brazil
+    "JNB": "JSE",             # Johannesburg Stock Exchange
+}
 
 # --- Helper functions ---
-def get_instrument_metadata(symbol: str):
-    """
-    Fetch metadata for a single instrument (ticker).
-    """
-    instrument = yf.Ticker(symbol)
-    metadata = [instrument.info]
-    return metadata
 
 
 def normalize_symbols(symbols):
@@ -83,6 +135,34 @@ def tickers_to_concept_uris(symbols):
 
     return company_names, concept_uris
 
+
+def map_exchange(info: dict) -> str:
+    yf_code = info.get("exchange")
+    full_name = info.get("fullExchangeName")
+
+    # Try short code first, then full name
+    if yf_code in YF_TO_FMP_EXCHANGE:
+        return YF_TO_FMP_EXCHANGE[yf_code]
+    if full_name in YF_TO_FMP_EXCHANGE:
+        return YF_TO_FMP_EXCHANGE[full_name]
+
+    return "UNKNOWN"
+
+
+# --- Get instruments important data ---
+
+def get_instrument_metadata(symbol: str):
+    """
+    Fetch metadata for a single instrument (ticker).
+    """
+    instrument = yf.Ticker(symbol)
+    metadata = [instrument.info]
+    return metadata
+
+
+def get_instrument_financials(symbol):
+    dat = yf.Ticker(symbol)
+    print(dat.option_chain(dat.options[0]).calls)
 
 # --- News fetrching functions ---
 
@@ -252,6 +332,7 @@ def get_news_mixed(symbols, max_items=10, days=3):
 
 
 # --- Run example ---
-get_news(input("Enter tickers (e.g., AAPL): "))
+get_instrument_important_data("AAPL")
+# get_news(input("Enter tickers (e.g., AAPL): "))
 # get_news_mixed(input("Enter tickers (e.g., AAPL, NVDA): "))
 # get_news_grouped(input("Enter tickers (e.g., AAPL, NVDA): "))
