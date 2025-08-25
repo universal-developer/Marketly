@@ -159,6 +159,7 @@ def map_exchange(info: dict) -> str:
 def fetch_stock_financials(symbol: str) -> dict:
     """Fetch essential data for a single stock from FMP."""
     try:
+        # --- Core financial data package ---
         stock_data = {
             "symbol": symbol,
 
@@ -176,11 +177,15 @@ def fetch_stock_financials(symbol: str) -> dict:
             "cash_flow": fmpsdk.cash_flow_statement(apikey=FINANCIALS_API_KEY, symbol=symbol, period="quarter"),
             "ratios": fmpsdk.financial_ratios_ttm(apikey=FINANCIALS_API_KEY, symbol=symbol),
             "key_metrics": fmpsdk.key_metrics_ttm(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "enterprise_values": fmpsdk.enterprise_values(apikey=FINANCIALS_API_KEY, symbol=symbol, period="quarter"),
+            "financial_growth": fmpsdk.financial_growth(apikey=FINANCIALS_API_KEY, symbol=symbol, period="annual"),
+            "income_statement_as_reported": fmpsdk.income_statement_as_reported(
+                apikey=FINANCIALS_API_KEY, symbol=symbol, period="annual"
+            ),
 
             # --- Valuation & Ratings ---
             "rating": fmpsdk.rating(apikey=FINANCIALS_API_KEY, symbol=symbol),
             "dcf": fmpsdk.discounted_cash_flow(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            # "analyst_consensus": fmpsdk.upgrades_downgrades_consensus(apikey=FINANCIALS_API_KEY, symbol=symbol),
 
             # --- Ownership ---
             "institutional_holders": fmpsdk.institutional_holders(apikey=FINANCIALS_API_KEY, symbol=symbol),
@@ -192,13 +197,36 @@ def fetch_stock_financials(symbol: str) -> dict:
             "social_sentiment": fmpsdk.social_sentiments(apikey=FINANCIALS_API_KEY, symbol=symbol),
 
             # --- Calendar events ---
-            # "earning_calendar": fmpsdk.earning_calendar(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            # "dividends": fmpsdk.dividend_calendar(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            # "splits": fmpsdk.stock_split_calendar(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "earnings_surprises": fmpsdk.earnings_surprises(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "dividends_history": fmpsdk.historical_stock_dividend(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "splits_history": fmpsdk.historical_stock_split(apikey=FINANCIALS_API_KEY, symbol=symbol),
         }
 
-        with open("company_financials.json", "w", encoding="utf-8") as f:
-            json.dump(stock_data, f, ensure_ascii=False, indent=2)
+        # --- Upcoming dividends (bulk → filter for symbol) ---
+        upcoming_dividends = fmpsdk.dividend_calendar(
+            apikey=FINANCIALS_API_KEY,
+            from_date=datetime.date.today().isoformat(),
+            to_date=(datetime.date.today() +
+                     datetime.timedelta(days=365)).isoformat()
+        )
+        if isinstance(upcoming_dividends, list):
+            stock_data["dividends_upcoming"] = [
+                d for d in upcoming_dividends if d.get("symbol") == symbol]
+        else:
+            stock_data["dividends_upcoming"] = []
+
+        # --- Upcoming earnings (bulk → filter for symbol) ---
+        upcoming_earnings = fmpsdk.earning_calendar(
+            apikey=FINANCIALS_API_KEY,
+            from_date=datetime.date.today().isoformat(),
+            to_date=(datetime.date.today() +
+                     datetime.timedelta(days=365)).isoformat()
+        )
+        if isinstance(upcoming_earnings, list):
+            stock_data["earnings_calendar_next"] = [
+                e for e in upcoming_earnings if e.get("symbol") == symbol]
+        else:
+            stock_data["earnings_calendar_next"] = []
 
         return stock_data
 
@@ -206,8 +234,8 @@ def fetch_stock_financials(symbol: str) -> dict:
         print(f"Error fetching data for {symbol}: {e}")
         return {"symbol": symbol, "error": str(e)}
 
-
 # --- Get instruments important data ---
+
 
 def get_instrument_metadata(symbol: str):
     """
