@@ -156,7 +156,7 @@ def map_exchange(info: dict) -> str:
     return "UNKNOWN"
 
 
-def fetch_stock_data(symbol: str) -> dict:
+def fetch_stock_financials(symbol: str) -> dict:
     """Fetch essential data for a single stock from FMP."""
     try:
         stock_data = {
@@ -392,7 +392,7 @@ def get_news_mixed(symbols, max_items=10, days=3):
 
 # --- Run example ---
 # get_instrument_financials("AAPL")
-fetch_stock_data("AAPL")
+fetch_stock_financials("AAPL")
 # get_news(input("Enter tickers (e.g., AAPL): "))
 # get_news_mixed(input("Enter tickers (e.g., AAPL, NVDA): "))
 # get_news_grouped(input("Enter tickers (e.g., AAPL, NVDA): "))
