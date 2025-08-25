@@ -1,5 +1,6 @@
 import datetime
 import os
+import typing
 import yfinance as yf
 import fmpsdk
 import json
@@ -13,6 +14,8 @@ FINANCIALS_API_KEY = os.getenv("FMPSDK_API_KEY")
 
 # Initialize Event Registry client
 er = EventRegistry(apiKey=NEWS_API_KEY, allowUseOfArchive=False)
+
+# --- fmpsdk API consts ---
 
 YF_TO_FMP_EXCHANGE = {
     # --- United States ---
@@ -71,6 +74,10 @@ YF_TO_FMP_EXCHANGE = {
     "SAO": "B3",              # B3 Brazil
     "JNB": "JSE",             # Johannesburg Stock Exchange
 }
+
+time_delta_5min: str = "5min"
+time_delta_15min: str = "15min"
+time_delta_daily: str = "daily"
 
 # --- Helper functions ---
 
@@ -149,6 +156,57 @@ def map_exchange(info: dict) -> str:
     return "UNKNOWN"
 
 
+def fetch_stock_data(symbol: str) -> dict:
+    """Fetch essential data for a single stock from FMP."""
+    try:
+        stock_data = {
+            "symbol": symbol,
+
+            # --- Company basics ---
+            "profile": fmpsdk.company_profile(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "quote": fmpsdk.quote(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "executives": fmpsdk.key_executives(apikey=FINANCIALS_API_KEY, symbol=symbol),
+
+            # --- Financials ---
+            "income_statement": {
+                "annual": fmpsdk.income_statement(apikey=FINANCIALS_API_KEY, symbol=symbol, period="annual"),
+                "quarterly": fmpsdk.income_statement(apikey=FINANCIALS_API_KEY, symbol=symbol, period="quarter"),
+            },
+            "balance_sheet": fmpsdk.balance_sheet_statement(apikey=FINANCIALS_API_KEY, symbol=symbol, period="quarter"),
+            "cash_flow": fmpsdk.cash_flow_statement(apikey=FINANCIALS_API_KEY, symbol=symbol, period="quarter"),
+            "ratios": fmpsdk.financial_ratios_ttm(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "key_metrics": fmpsdk.key_metrics_ttm(apikey=FINANCIALS_API_KEY, symbol=symbol),
+
+            # --- Valuation & Ratings ---
+            "rating": fmpsdk.rating(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "dcf": fmpsdk.discounted_cash_flow(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            # "analyst_consensus": fmpsdk.upgrades_downgrades_consensus(apikey=FINANCIALS_API_KEY, symbol=symbol),
+
+            # --- Ownership ---
+            "institutional_holders": fmpsdk.institutional_holders(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "insider_trading": fmpsdk.insider_trading(apikey=FINANCIALS_API_KEY, symbol=symbol, limit=10),
+
+            # --- News & Sentiment ---
+            "news": fmpsdk.stock_news(apikey=FINANCIALS_API_KEY, tickers=symbol, limit=10),
+            "press_releases": fmpsdk.press_releases(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            "social_sentiment": fmpsdk.social_sentiments(apikey=FINANCIALS_API_KEY, symbol=symbol),
+
+            # --- Calendar events ---
+            # "earning_calendar": fmpsdk.earning_calendar(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            # "dividends": fmpsdk.dividend_calendar(apikey=FINANCIALS_API_KEY, symbol=symbol),
+            # "splits": fmpsdk.stock_split_calendar(apikey=FINANCIALS_API_KEY, symbol=symbol),
+        }
+
+        with open("company_financials.json", "w", encoding="utf-8") as f:
+            json.dump(stock_data, f, ensure_ascii=False, indent=2)
+
+        return stock_data
+
+    except Exception as e:
+        print(f"Error fetching data for {symbol}: {e}")
+        return {"symbol": symbol, "error": str(e)}
+
+
 # --- Get instruments important data ---
 
 def get_instrument_metadata(symbol: str):
@@ -163,6 +221,7 @@ def get_instrument_metadata(symbol: str):
 def get_instrument_financials(symbol):
     dat = yf.Ticker(symbol)
     print(dat.option_chain(dat.options[0]).calls)
+    return dat.option_chain(dat.options[0]).calls
 
 # --- News fetrching functions ---
 
@@ -332,7 +391,8 @@ def get_news_mixed(symbols, max_items=10, days=3):
 
 
 # --- Run example ---
-get_instrument_important_data("AAPL")
+# get_instrument_financials("AAPL")
+fetch_stock_data("AAPL")
 # get_news(input("Enter tickers (e.g., AAPL): "))
 # get_news_mixed(input("Enter tickers (e.g., AAPL, NVDA): "))
 # get_news_grouped(input("Enter tickers (e.g., AAPL, NVDA): "))
