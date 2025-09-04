@@ -1,10 +1,10 @@
 from fastapi import FastAPI
-from app.routes import stocks, news, analysis
+from app.routes import financials, news, analysis
 
 app = FastAPI(title="Marketly Backend 🚀")
 
 # Include routers
-app.include_router(stocks.router)
+app.include_router(financials.router)
 app.include_router(news.router)
 app.include_router(analysis.router)
 

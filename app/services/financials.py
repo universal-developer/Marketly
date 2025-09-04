@@ -1,59 +1,99 @@
-import fmpsdk
+import yfinance as yf
 import datetime
-import os
-from dotenv import load_dotenv, find_dotenv
+import math
 
-load_dotenv(find_dotenv())
-FINANCIALS_API_KEY = os.getenv("FMPSDK_API_KEY")
+
+def sanitize(obj):
+    """Recursively replace NaN/Inf with None for JSON safety."""
+    if isinstance(obj, dict):
+        return {k: sanitize(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize(v) for v in obj]
+    elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
 
 
 def fetch_stock_financials(symbol: str) -> dict:
     try:
-        stock_data = {
-            "symbol": symbol,
-            "profile": fmpsdk.company_profile(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "quote": fmpsdk.quote(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "executives": fmpsdk.key_executives(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "income_statement": {
-                "annual": fmpsdk.income_statement(apikey=FINANCIALS_API_KEY, symbol=symbol, period="annual"),
-                "quarterly": fmpsdk.income_statement(apikey=FINANCIALS_API_KEY, symbol=symbol, period="quarter"),
-            },
-            "balance_sheet": fmpsdk.balance_sheet_statement(apikey=FINANCIALS_API_KEY, symbol=symbol, period="quarter"),
-            "cash_flow": fmpsdk.cash_flow_statement(apikey=FINANCIALS_API_KEY, symbol=symbol, period="quarter"),
-            "ratios": fmpsdk.financial_ratios_ttm(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "key_metrics": fmpsdk.key_metrics_ttm(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "enterprise_values": fmpsdk.enterprise_values(apikey=FINANCIALS_API_KEY, symbol=symbol, period="quarter"),
-            "financial_growth": fmpsdk.financial_growth(apikey=FINANCIALS_API_KEY, symbol=symbol, period="annual"),
-            "rating": fmpsdk.rating(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "dcf": fmpsdk.discounted_cash_flow(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "institutional_holders": fmpsdk.institutional_holders(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "insider_trading": fmpsdk.insider_trading(apikey=FINANCIALS_API_KEY, symbol=symbol, limit=10),
-            "news": fmpsdk.stock_news(apikey=FINANCIALS_API_KEY, tickers=symbol, limit=10),
-            "press_releases": fmpsdk.press_releases(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "social_sentiment": fmpsdk.social_sentiments(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "earnings_surprises": fmpsdk.earnings_surprises(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "dividends_history": fmpsdk.historical_stock_dividend(apikey=FINANCIALS_API_KEY, symbol=symbol),
-            "splits_history": fmpsdk.historical_stock_split(apikey=FINANCIALS_API_KEY, symbol=symbol),
+        ticker = yf.Ticker(symbol)
+        stock_data = {"symbol": symbol}
+
+        # --- Basics ---
+        stock_data["info"] = ticker.get_info()
+        stock_data["calendar"] = ticker.get_calendar()
+        stock_data["isin"] = ticker.get_isin()
+
+        # --- Financials ---
+        stock_data["income_statement"] = {
+            "annual": ticker.get_income_stmt(as_dict=True, freq="yearly"),
+            "quarterly": ticker.get_income_stmt(as_dict=True, freq="quarterly"),
+            "ttm": ticker.get_income_stmt(as_dict=True, freq="trailing"),
+        }
+        stock_data["balance_sheet"] = {
+            "annual": ticker.get_balance_sheet(as_dict=True, freq="yearly"),
+            "quarterly": ticker.get_balance_sheet(as_dict=True, freq="quarterly"),
+        }
+        stock_data["cash_flow"] = {
+            "annual": ticker.get_cash_flow(as_dict=True, freq="yearly"),
+            "quarterly": ticker.get_cash_flow(as_dict=True, freq="quarterly"),
+            # "ttm": ticker.get_ttm_cash_flow(as_dict=True),
         }
 
-        upcoming_dividends = fmpsdk.dividend_calendar(
-            apikey=FINANCIALS_API_KEY,
-            from_date=datetime.date.today().isoformat(),
-            to_date=(datetime.date.today() +
-                     datetime.timedelta(days=365)).isoformat()
-        )
-        stock_data["dividends_upcoming"] = [d for d in upcoming_dividends if d.get(
-            "symbol") == symbol] if isinstance(upcoming_dividends, list) else []
+        # --- Dividends, Splits, Actions ---
+        stock_data["dividends"] = ticker.get_dividends(period="max").to_dict()
+        stock_data["splits"] = ticker.get_splits(period="max").to_dict()
+        stock_data["actions"] = ticker.get_actions(period="max").to_dict()
 
-        upcoming_earnings = fmpsdk.earning_calendar(
-            apikey=FINANCIALS_API_KEY,
-            from_date=datetime.date.today().isoformat(),
-            to_date=(datetime.date.today() +
-                     datetime.timedelta(days=365)).isoformat()
+        # --- Earnings ---
+        stock_data["earnings_dates"] = (
+            ticker.get_earnings_dates(limit=12).to_dict()
+            if ticker.get_earnings_dates(limit=12) is not None
+            else {}
         )
-        stock_data["earnings_calendar_next"] = [e for e in upcoming_earnings if e.get(
-            "symbol") == symbol] if isinstance(upcoming_earnings, list) else []
+        stock_data["earnings_estimate"] = ticker.get_earnings_estimate(
+            as_dict=True)
+        stock_data["earnings_history"] = ticker.get_earnings_history(
+            as_dict=True)
+        stock_data["eps_trend"] = ticker.get_eps_trend(as_dict=True)
+        stock_data["eps_revisions"] = ticker.get_eps_revisions(as_dict=True)
 
-        return stock_data
+        # --- Holders & Insiders ---
+        stock_data["institutional_holders"] = ticker.get_institutional_holders(
+            as_dict=True)
+        stock_data["mutualfund_holders"] = ticker.get_mutualfund_holders(
+            as_dict=True)
+        stock_data["major_holders"] = ticker.get_major_holders(as_dict=True)
+        stock_data["insider_transactions"] = ticker.get_insider_transactions(
+            as_dict=True)
+        stock_data["insider_roster"] = ticker.get_insider_roster_holders(
+            as_dict=True)
+        stock_data["insider_purchases"] = ticker.get_insider_purchases(
+            as_dict=True)
+
+        # --- Recommendations & Ratings ---
+        stock_data["recommendations"] = ticker.get_recommendations(
+            as_dict=True)
+        stock_data["recommendations_summary"] = ticker.get_recommendations_summary(
+            as_dict=True)
+        stock_data["upgrades_downgrades"] = ticker.get_upgrades_downgrades(
+            as_dict=True)
+        stock_data["analyst_price_targets"] = ticker.get_analyst_price_targets()
+
+        # --- Estimates & Growth ---
+        stock_data["revenue_estimate"] = ticker.get_revenue_estimate(
+            as_dict=True)
+        stock_data["growth_estimates"] = ticker.get_growth_estimates(
+            as_dict=True)
+
+        # --- SEC & Sustainability ---
+        stock_data["sec_filings"] = ticker.get_sec_filings()
+        stock_data["sustainability"] = ticker.get_sustainability(as_dict=True)
+
+        # --- News ---
+        stock_data["news"] = ticker.get_news(count=10, tab="all")
+
+        return sanitize(stock_data)
+
     except Exception as e:
         return {"symbol": symbol, "error": str(e)}
