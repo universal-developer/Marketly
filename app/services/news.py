@@ -1,80 +1,43 @@
-import json
-import yfinance as yf
-from eventregistry import EventRegistry, QueryArticlesIter
-from dotenv import load_dotenv, find_dotenv
 import os
+import json
+import datetime
+import yfinance as yf
+import finnhub
+from dotenv import load_dotenv, find_dotenv
 from app.services.utils import tickers_to_concept_uris
 
 # --- Load API keys ---
 load_dotenv(find_dotenv())
-NEWS_API_KEY = os.getenv("EVENT_REGISTERY_API_KEY")
-
-# Initialize Event Registry client
-er = EventRegistry(apiKey=NEWS_API_KEY, allowUseOfArchive=False)
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")  # match .env key name exactly
+finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
 
 
 def get_news(symbol: str, days: int = 3, max_items: int = 8, output_file: str | None = None):
     """
-    Fetch news for a single company based on its ticker symbol.
+    Fetch news for a single company based on its ticker symbol using Finnhub.
     Optionally saves results to a JSON file if output_file is provided.
     """
-    # Resolve company name from Yahoo Finance
-    ticker = yf.Ticker(symbol)
-    info = ticker.info or {}
-    company_name = info.get("shortName") or info.get(
-        "longName") or info.get("displayName") or symbol
+    date_start = (datetime.date.today() -
+                  datetime.timedelta(days=days)).isoformat()
+    date_end = datetime.date.today().isoformat()
 
-    # Map to Event Registry concept
-    company_uri = er.getConceptUri(company_name)
-    if not company_uri:
-        print(f"⚠️ Could not resolve concept for {symbol} ({company_name})")
-        return []
+    articles = finnhub_client.company_news(
+        symbol, _from=date_start, to=date_end)
 
-    query = {
-        "$query": {
-            "$and": [
-                {"conceptUri": company_uri},
-                {"lang": "eng"},
-                {"$or": [
-                    {"sourceUri": "reuters.com"},
-                    {"sourceUri": "bloomberg.com"},
-                    {"sourceUri": "cnbc.com"},
-                    {"sourceUri": "finance.yahoo.com"},
-                    {"sourceUri": "wsj.com"},
-                    {"sourceUri": "ft.com"}
-                ]}
-            ]
-        },
-        "$filter": {"forceMaxDataTimeWindow": str(days)}
-    }
-
-    # Collect articles
-    articles = []
-    q = QueryArticlesIter.initWithComplexQuery(query)
-
-    for article in q.execQuery(er, maxItems=max_items):
-        articles.append({
-            "company_name": company_name,
-            "title": article.get("title"),
-            "url": article.get("url"),
-            "source": article.get("source", {}).get("title"),
-            "dateTime": article.get("dateTime"),
-            "image": article.get("image"),
-            "body": article.get("body")
-        })
+    if max_items:
+        articles = articles[:max_items]
 
     # Save results if requested
     if output_file:
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(articles, f, ensure_ascii=False, indent=2)
-        print(
-            f"✅ Saved {len(articles)} articles for {company_name} → {output_file}")
+        print(f"✅ Saved {len(articles)} articles for {symbol} → {output_file}")
 
     return articles
 
 
 """def get_news_grouped(symbols, max_items: int = 50, days: int = 7, output_file: str | None = None):
-    
+
 Returns a dict of articles grouped by company name.
 Optionally saves results to a JSON file if output_file is provided.
 
@@ -129,55 +92,28 @@ def get_news_grouped(symbols, max_items: int = 50, days: int = 7, output_file: s
     Returns a dict of articles grouped by company name.
     Optionally saves results to a JSON file if output_file is provided.
     """
-    company_names, concept_uris = tickers_to_concept_uris(symbols)
+    """
+    Fetch grouped news for multiple tickers.
+    Returns a dict: { "AAPL": [...articles], "NVDA": [...articles] }
+    """
+    if isinstance(symbols, str):
+        symbols = [s.strip().upper() for s in symbols.split(",")]
 
-    grouped_articles = {}
-
-    for name, concept_uri in zip(company_names, concept_uris):
-        if not concept_uri:
-            print(f"⚠️ Skipping {name}, no conceptUri found")
-            continue
-
-        query = {
-            "$query": {
-                "$and": [
-                    {"conceptUri": concept_uri},
-                    {"lang": "eng"},
-                    {"$or": [
-                        {"sourceUri": "reuters.com"},
-                        {"sourceUri": "bloomberg.com"},
-                        {"sourceUri": "cnbc.com"},
-                        {"sourceUri": "finance.yahoo.com"},
-                        {"sourceUri": "wsj.com"},
-                        {"sourceUri": "ft.com"}
-                    ]}
-                ]
-            },
-            "$filter": {"forceMaxDataTimeWindow": str(days)}
+    grouped = {}
+    for symbol in symbols:
+        url = f"{BASE_URL}/news/stock"
+        params = {
+            "symbols": symbol,
+            "limit": limit,
+            "from": date_start,
+            "to": date_end,
+            "apikey": FMP_API_KEY,
         }
+        r = requests.get(url, params=params)
+        r.raise_for_status()
+        grouped[symbol] = r.json()
 
-        company_articles = []
-        q = QueryArticlesIter.initWithComplexQuery(query)
-
-        for article in q.execQuery(er, maxItems=max_items):
-            company_articles.append({
-                "title": article.get("title"),
-                "url": article.get("url"),
-                "source": article.get("source", {}).get("title"),
-                "dateTime": article.get("dateTime"),
-                "image": article.get("image"),
-                "body": article.get("body")
-            })
-
-        grouped_articles[name] = company_articles
-
-    # Save results if requested
-    if output_file:
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(grouped_articles, f, ensure_ascii=False, indent=2)
-        print(f"✅ Saved grouped articles to {output_file}")
-
-    return grouped_articles
+    return grouped
 
 
 def get_news_mixed(symbols, max_items: int = 10, days: int = 3, output_file: str | None = None):

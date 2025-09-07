@@ -44,25 +44,31 @@ def tickers_to_concept_uris(symbols):
     if not symbols_clean:
         return [], []
 
-    # Get ticker objects
     tickers = [yf.Ticker(symbol) for symbol in symbols_clean]
 
-    # Resolve company names
-    company_names = []
+    company_names, concept_uris = [], []
+
     for ticker in tickers:
         info = ticker.info or {}
-        company_name = info.get("shortName") or \
-            info.get("longName") or \
-            info.get("displayName")
-        if company_name:
-            company_names.append(company_name)
+        # ✅ Always fallback to ticker symbol if no names
+        company_name = (
+            info.get("shortName")
+            or info.get("longName")
+            or info.get("displayName")
+            or ticker.ticker
+        )
+        company_names.append(company_name)
 
-    # Map names to concept URIs
-    concept_uris = []
-    for name in company_names:
-        uri = er.getConceptUri(name)
-        if uri:
-            concept_uris.append(uri)
+        # Map to Event Registry concept
+        uri = er.getConceptUri(company_name)
+        if not uri:
+            print(
+                f"⚠️ Could not resolve EventRegistry concept for '{company_name}'")
+        concept_uris.append(uri)
+
+    # Filter out None values so queries don’t break
+    company_names = [n for n, u in zip(company_names, concept_uris) if u]
+    concept_uris = [u for u in concept_uris if u]
 
     return company_names, concept_uris
 
