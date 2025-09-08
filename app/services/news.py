@@ -17,6 +17,7 @@ def get_news(symbol: str, days: int = 3, max_items: int = 8, output_file: str | 
     Fetch news for a single company based on its ticker symbol using Finnhub.
     Optionally saves results to a JSON file if output_file is provided.
     """
+
     date_start = (datetime.date.today() -
                   datetime.timedelta(days=days)).isoformat()
     date_end = datetime.date.today().isoformat()
@@ -36,82 +37,37 @@ def get_news(symbol: str, days: int = 3, max_items: int = 8, output_file: str | 
     return articles
 
 
-"""def get_news_grouped(symbols, max_items: int = 50, days: int = 7, output_file: str | None = None):
-
-Returns a dict of articles grouped by company name.
-Optionally saves results to a JSON file if output_file is provided.
-
-    company_names, concept_uris = tickers_to_concept_uris(symbols)
-    grouped_articles = {}
-
-    for name, concept_uri in zip(company_names, concept_uris):
-        query = {
-            "$query": {
-                "$and": [
-                    {"conceptUri": concept_uri},
-                    {"lang": "eng"},
-                    {"$or": [
-                        {"sourceUri": "reuters.com"},
-                        {"sourceUri": "bloomberg.com"},
-                        {"sourceUri": "cnbc.com"},
-                        {"sourceUri": "finance.yahoo.com"},
-                        {"sourceUri": "wsj.com"},
-                        {"sourceUri": "ft.com"}
-                    ]}
-                ]
-            },
-            "$filter": {"forceMaxDataTimeWindow": str(days)}
-        }
-
-        company_articles = []
-        q = QueryArticlesIter.initWithComplexQuery(query)
-
-        for article in q.execQuery(er, maxItems=max_items):
-            company_articles.append({
-                "title": article.get("title"),
-                "url": article.get("url"),
-                "source": article.get("source", {}).get("title"),
-                "dateTime": article.get("dateTime"),
-                "image": article.get("image"),
-                "body": article.get("body")
-            })
-
-        grouped_articles[name] = company_articles
-
-    # Save results if requested
-    if output_file:
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(grouped_articles, f, ensure_ascii=False, indent=2)
-        print(f"✅ Saved grouped articles to {output_file}")
-
-    return grouped_articles"""
-
-
-def get_news_grouped(symbols, max_items: int = 50, days: int = 7, output_file: str | None = None):
+def get_news_grouped(symbols, max_items: int = 50, days: int = 30, output_file: str | None = None):
     """
-    Returns a dict of articles grouped by company name.
-    Optionally saves results to a JSON file if output_file is provided.
-    """
-    """
-    Fetch grouped news for multiple tickers.
+    Fetch grouped news for multiple tickers using Finnhub.
     Returns a dict: { "AAPL": [...articles], "NVDA": [...articles] }
     """
+
+    date_start = (datetime.date.today() -
+                  datetime.timedelta(days=days)).isoformat()
+    date_end = datetime.date.today().isoformat()
+
     if isinstance(symbols, str):
         symbols = [s.strip().upper() for s in symbols.split(",")]
 
+    print(symbols)
+
     grouped = {}
+
     for symbol in symbols:
-        url = f"{BASE_URL}/news/stock"
-        params = {
-            "symbols": symbol,
-            "limit": limit,
-            "from": date_start,
-            "to": date_end,
-            "apikey": FMP_API_KEY,
-        }
-        r = requests.get(url, params=params)
-        r.raise_for_status()
-        grouped[symbol] = r.json()
+        articles = finnhub_client.company_news(
+            symbol, _from=date_start, to=date_end)
+
+        if max_items:
+            articles = articles[:max_items]
+
+        grouped[symbol] = articles  # keep same structure as get_news
+
+    if output_file:
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(grouped, f, ensure_ascii=False, indent=2)
+        print(
+            f"✅ Saved grouped articles for {len(symbols)} tickers → {output_file}")
 
     return grouped
 
