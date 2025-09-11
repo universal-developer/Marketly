@@ -1,38 +1,24 @@
 from fastapi import APIRouter, Query
 from app.services.news import get_news, get_news_grouped, get_news_mixed
 
-router = APIRouter()
+router = APIRouter(prefix="/news", tags=["news"])
 
 
-@router.get("/news/{symbol}")
-def company_news(
-    symbol: str,
-    days: int = Query(3, description="How many days back to fetch news"),
-    max_items: int = Query(8, description="Max number of articles to return"),
-):
-    """
-    Fetch latest news for a single company.
-    Example: /news/AAPL?days=5&max_items=12
-    """
-    return get_news(symbol, days=days, max_items=max_items)
-
-
-@router.get("/news/grouped")
+@router.get("/grouped")
 def grouped_news(
     symbols: str = Query(..., description="Comma-separated list of tickers"),
     days: int = Query(7, description="How many days back to fetch news"),
     max_items: int = Query(
         50, description="Max number of articles per company"),
 ):
-    """
-    Fetch grouped news per company.
-    Example: /news/grouped?symbols=AAPL,NVDA,MSFT
-    """
     symbol_list = [s.strip() for s in symbols.split(",")]
-    return get_news_grouped(symbol_list, max_items=max_items, days=days)
+    grouped = get_news_grouped(symbol_list, max_items=max_items, days=days)
+
+    print(">>> Grouped returned:", grouped)
+    return grouped   # FastAPI will JSON-encode automatically
 
 
-@router.get("/news/mixed")
+@router.get("/mixed")
 def mixed_news(
     symbols: str = Query(..., description="Comma-separated list of tickers"),
     days: int = Query(3, description="How many days back to fetch news"),
@@ -44,3 +30,16 @@ def mixed_news(
     """
     symbol_list = [s.strip() for s in symbols.split(",")]
     return get_news_mixed(symbol_list, max_items=max_items, days=days)
+
+
+@router.get("/{symbol}")
+def company_news(
+    symbol: str,
+    days: int = Query(3, description="How many days back to fetch news"),
+    max_items: int = Query(8, description="Max number of articles to return"),
+):
+    """
+    Fetch latest news for a single company.
+    Example: /news/AAPL?days=5&max_items=12
+    """
+    return get_news(symbol, days=days, max_items=max_items)
