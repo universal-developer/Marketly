@@ -17,12 +17,30 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 def score_stock(data: dict) -> dict:
-    response = client.responses.create(
-        model="gpt-5",
-        input="How much gold would it take to coat the Statue of Liberty in a 1mm layer?",
-        reasoning={
-            "effort": "minimal"
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a financial analyst. Score stocks 0-100."},
+            {"role": "user",
+                "content": f"Analyze this stock data: {json.dumps(data)[:5000]}"}
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "stock_score",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": "integer"},
+                        "summary": {"type": "string"},
+                        "positives": {"type": "array", "items": {"type": "string"}},
+                        "negatives": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["score", "summary"]
+                }
+            }
         }
     )
+    return json.loads(response.choices[0].message.content)
 
     return json.loads(response.text)
