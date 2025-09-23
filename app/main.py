@@ -1,5 +1,9 @@
 from fastapi import FastAPI
 from app.routes import financials, news, analysis
+from rich.traceback import install
+
+# Make all tracebacks pretty in the console
+install(show_locals=True)
 
 app = FastAPI(title="Marketly Backend 🚀")
 

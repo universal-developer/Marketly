@@ -3,6 +3,8 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import json
+from app.services.utils import sanitize
+
 
 load_dotenv()  # loads .env file
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -17,12 +19,16 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 def score_stock(data: dict) -> dict:
+
+    safe_data = sanitize(data)
+    safe_json = json.dumps(safe_data)[:5000]
+
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-5-nano-2025-08-07",
         messages=[
             {"role": "system", "content": "You are a financial analyst. Score stocks 0-100."},
             {"role": "user",
-                "content": f"Analyze this stock data: {json.dumps(data)[:5000]}"}
+                "content": f"Analyze this stock data: {safe_json}"}
         ],
         response_format={
             "type": "json_schema",

@@ -2,6 +2,10 @@ import yfinance as yf
 from eventregistry import EventRegistry
 import os
 from dotenv import load_dotenv, find_dotenv
+import math
+import datetime
+import pandas as pd
+
 
 load_dotenv(find_dotenv())
 NEWS_API_KEY = os.getenv("EVENT_REGISTERY_API_KEY")
@@ -80,3 +84,28 @@ def map_exchange(info: dict) -> str:
     if full_name in YF_TO_FMP_EXCHANGE:
         return YF_TO_FMP_EXCHANGE[full_name]
     return "UNKNOWN"
+
+
+def sanitize(obj):
+    """Recursively clean data for JSON serialization (NaN, Inf, Timestamps, Dates)."""
+    if isinstance(obj, dict):
+        clean = {}
+        for k, v in obj.items():
+            # ensure key is string
+            if isinstance(k, (datetime.date, datetime.datetime, pd.Timestamp)):
+                k = k.isoformat()
+            else:
+                k = str(k)
+            clean[k] = sanitize(v)
+        return clean
+
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize(v) for v in obj]
+
+    elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+
+    elif isinstance(obj, (datetime.date, datetime.datetime, pd.Timestamp)):
+        return obj.isoformat()
+
+    return obj

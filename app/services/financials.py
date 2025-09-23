@@ -1,17 +1,7 @@
 import yfinance as yf
 import datetime
 import math
-
-
-def sanitize(obj):
-    """Recursively replace NaN/Inf with None for JSON safety."""
-    if isinstance(obj, dict):
-        return {k: sanitize(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [sanitize(v) for v in obj]
-    elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
-        return None
-    return obj
+from app.services.utils import sanitize
 
 
 def fetch_stock_financials(symbol: str) -> dict:
