@@ -31,9 +31,9 @@ def fetch_stock_financials(symbol: str) -> dict:
         }
 
         # --- Dividends, Splits, Actions ---
-        stock_data["dividends"] = ticker.get_dividends(period="max").to_dict()
-        stock_data["splits"] = ticker.get_splits(period="max").to_dict()
-        stock_data["actions"] = ticker.get_actions(period="max").to_dict()
+        stock_data["dividends"] = ticker.get_dividends(period="10y").to_dict()
+        stock_data["splits"] = ticker.get_splits(period="10y").to_dict()
+        stock_data["actions"] = ticker.get_actions(period="10y").to_dict()
 
         # --- Earnings ---
         stock_data["earnings_dates"] = (

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.services.financials import fetch_stock_financials
+from app.services.news import get_news
 from app.services.gpt import score_stock
 
 router = APIRouter()
@@ -15,13 +16,14 @@ def analyze_stock(symbol: str):
 
 @router.get("/score/{symbol}")
 def stock_score_financials(symbol: str):
-    data = fetch_stock_financials(symbol)
-    analysis = score_stock(data)
+    financial_data = fetch_stock_financials(symbol)
+    news_data = get_news(symbol)
+    analysis = score_stock(financial_data, news_data)
     return {
         "symbol": symbol,
         "score": analysis["score"],
         "summary": analysis["summary"],
         "positives": analysis.get("positives", []),
         "negatives": analysis.get("negatives", []),
-        "raw_data": data
+        # "raw_data": financial_data
     }
