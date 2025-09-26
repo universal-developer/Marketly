@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routes import financials, news, analysis
+from app.routes import financials, news, analysis, econ_situation
 from rich.traceback import install
 
 # Make all tracebacks pretty in the console
@@ -11,6 +11,7 @@ app = FastAPI(title="Marketly Backend 🚀")
 app.include_router(financials.router)
 app.include_router(news.router)
 app.include_router(analysis.router)
+app.include_router(econ_situation.router)
 
 
 @app.get("/")
