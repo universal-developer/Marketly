@@ -103,7 +103,6 @@ def score_stock(financial_data: dict, news_data: dict) -> dict:
                 }
             }
         },
-        max_output_tokens=300,
     )
 
     return json.loads(response.choices[0].message.content)
