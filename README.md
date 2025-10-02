@@ -1,7 +1,3 @@
-Perfect — thanks for sharing the structure! Here’s a first draft of a **README.md** you can drop into your repo. I’ll keep it clean and structured like a real project README, but still simple since you’re in early stages:
-
----
-
 # Marketly
 
 Marketly is a **full-stack stock portfolio web app** built with **Next.js (frontend)** and **Python FastAPI (backend)**.
@@ -109,8 +105,4 @@ This is an early-stage project. Contributions, ideas, and feedback are welcome!
 ## 📜 License
 
 MIT License – feel free to use, modify, and share.
-
----
-
-👉 Do you want me to also **add some example API endpoints and sample requests** (like `GET /financials/AAPL` → returns Apple’s financials), so people can test the backend easily?
 
