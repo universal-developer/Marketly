@@ -87,3 +87,17 @@ def fetch_stock_financials(symbol: str) -> dict:
 
     except Exception as e:
         return {"symbol": symbol, "error": str(e)}
+
+
+def summarize_financials(symbol: string) -> dict:
+    """
+    A function that will summarize financials and send them in this way: 
+
+    income_statement: {
+        annual: {2022-12-31: {...}, 2021-12-31: {...}},
+        quarterly: {2024-06-30: {...}, 2024-03-31: {...}},
+        ttm: {...}
+    }
+    """
+
+    pass
