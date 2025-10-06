@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.services.financials import fetch_stock_financials
+from app.services.financials import fetch_stock_financials, summarize_financials
 from app.services.economics import fetch_macro_indicators
 from app.services.news import get_news
 from app.services.gpt import score_stock
@@ -19,8 +19,10 @@ def analyze_stock(symbol: str):
 def stock_score_financials(symbol: str):
     economical_data = fetch_macro_indicators()
     financial_data = fetch_stock_financials(symbol)
+    financials_summary = summarize_financials(symbol)
     news_data = get_news(symbol)
-    analysis = score_stock(financial_data, news_data, economical_data)
+    analysis = score_stock(
+        financial_data, financials_summary, news_data, economical_data)
     return {
         "symbol": symbol,
         "score": analysis["score"],

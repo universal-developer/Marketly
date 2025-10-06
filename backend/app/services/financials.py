@@ -89,15 +89,64 @@ def fetch_stock_financials(symbol: str) -> dict:
         return {"symbol": symbol, "error": str(e)}
 
 
-def summarize_financials(symbol: string) -> dict:
+def summarize_financials(stock_data: dict) -> dict:
     """
-    A function that will summarize financials and send them in this way: 
-
-    income_statement: {
-        annual: {2022-12-31: {...}, 2021-12-31: {...}},
-        quarterly: {2024-06-30: {...}, 2024-03-31: {...}},
-        ttm: {...}
-    }
+    Summarize and organize financial data for AI analysis.
+    Keep only the most meaningful, structured, and human-readable parts.
     """
 
-    pass
+    try:
+        info = stock_data.get("info", {})
+        income = stock_data.get("income_statement", {})
+        balance = stock_data.get("balance_sheet", {})
+        cash_flow = stock_data.get("cash_flow", {})
+        recs = stock_data.get("recommendations_summary", {})
+        targets = stock_data.get("analyst_price_targets", {})
+        earnings = stock_data.get("earnings_estimate", {})
+        revenue_est = stock_data.get("revenue_estimate", {})
+        growth = stock_data.get("growth_estimates", {})
+
+        summary = {
+            "symbol": stock_data.get("symbol"),
+            "company": {
+                "name": info.get("shortName"),
+                "sector": info.get("sector"),
+                "industry": info.get("industry"),
+                "country": info.get("country"),
+                "currency": info.get("currency"),
+                "market_cap": info.get("marketCap"),
+            },
+            "valuation": {
+                "trailing_pe": info.get("trailingPE"),
+                "forward_pe": info.get("forwardPE"),
+                "peg_ratio": info.get("pegRatio"),
+                "price_to_book": info.get("priceToBook"),
+                "dividend_yield": info.get("dividendYield"),
+                "beta": info.get("beta"),
+            },
+            "income_statement": {
+                "ttm": income.get("ttm"),
+                "latest_annual": next(iter(income.get("annual", {}).values()), None),
+                "latest_quarter": next(iter(income.get("quarterly", {}).values()), None),
+            },
+            "balance_sheet": {
+                "latest_annual": next(iter(balance.get("annual", {}).values()), None),
+                "latest_quarter": next(iter(balance.get("quarterly", {}).values()), None),
+            },
+            "cash_flow": {
+                "latest_annual": next(iter(cash_flow.get("annual", {}).values()), None),
+                "latest_quarter": next(iter(cash_flow.get("quarterly", {}).values()), None),
+            },
+            "analyst_data": {
+                "recommendations_summary": recs,
+                "price_targets": targets,
+                "earnings_estimate": earnings,
+                "revenue_estimate": revenue_est,
+                "growth_estimates": growth,
+            },
+        }
+
+        return sanitize(summary)
+
+    except Exception as e:
+        return {"error": str(e)}

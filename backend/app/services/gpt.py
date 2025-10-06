@@ -10,14 +10,16 @@ load_dotenv()  # loads .env file
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def score_stock(financial_data: dict, news_data: dict, economical_data: dict) -> dict:
-    safe_financial_data = sanitize(financial_data)
-    safe_news_data = sanitize(news_data)
-    safe_economical_data = sanitize(economical_data)
+def score_stock(financial_data: dict, financials_summary: dict, news_data: dict, economical_data: dict) -> dict:
+    safe_payload = {
+        "financials_summary": financials_summary,   # already clean
+        "news_data": news_data,                     # raw text = fine
+        "economical_data": economical_data,          # from FRED, already numeric
+        "financial_data": sanitize(financial_data)
+    }
 
-    safe_financial_json = json.dumps(safe_financial_data)[:5000]
-    safe_news_json = json.dumps(safe_news_data)[:5000]
-    safe_economical_data_json = json.dumps(economical_data)[:5000]
+    # Then truncate or serialize safely once
+    safe_payload_json = json.dumps(safe_payload)[:20000]
 
     response = client.chat.completions.create(
         model="gpt-5-nano-2025-08-07",
@@ -95,9 +97,7 @@ def score_stock(financial_data: dict, news_data: dict, economical_data: dict) ->
             {
                 "role": "user",
                 "content": (
-                    f"Financial data: {safe_financial_json}\n\n"
-                    f"News data: {safe_news_json}\n\n"
-                    f"Macro economical data: {safe_economical_data_json}"
+                    f"Stock's financials, economical (FRED), news data: {safe_payload_json}\n\n"
                 )
             }
         ],
