@@ -83,7 +83,7 @@ def fetch_stock_financials(symbol: str) -> dict:
         # --- News ---
         stock_data["news"] = ticker.get_news(count=10, tab="all")
 
-        return sanitize(stock_data)
+        return stock_data
 
     except Exception as e:
         return {"symbol": symbol, "error": str(e)}
@@ -146,7 +146,7 @@ def summarize_financials(stock_data: dict) -> dict:
             },
         }
 
-        return sanitize(summary)
+        return summary
 
     except Exception as e:
         return {"error": str(e)}
