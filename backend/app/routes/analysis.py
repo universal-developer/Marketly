@@ -19,7 +19,7 @@ def analyze_stock(symbol: str):
 def stock_score_financials(symbol: str):
     economical_data = fetch_macro_indicators()
     financial_data = fetch_stock_financials(symbol)
-    financials_summary = summarize_financials(symbol)
+    financials_summary = summarize_financials(financial_data)
     news_data = get_news(symbol)
     analysis = score_stock(
         financial_data, financials_summary, news_data, economical_data)
