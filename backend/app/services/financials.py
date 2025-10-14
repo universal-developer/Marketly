@@ -1,7 +1,7 @@
 import yfinance as yf
 import datetime
 import math
-from app.services.utils import sanitize
+from app.utils.sanitizer_util import sanitize
 
 
 def fetch_stock_financials(symbol: str) -> dict:

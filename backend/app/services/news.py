@@ -5,7 +5,8 @@ import yfinance as yf
 import finnhub
 from dotenv import load_dotenv, find_dotenv
 from fastapi.encoders import jsonable_encoder
-from app.services.utils import tickers_to_concept_uris
+from app.utils.news_util import tickers_to_concept_uris
+
 
 # --- Load API keys ---
 load_dotenv(find_dotenv())

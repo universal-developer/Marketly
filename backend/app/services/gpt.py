@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import json
-from app.services.utils import sanitize
+from app.utils.sanitizer_util import sanitize
 
 
 load_dotenv()  # loads .env file

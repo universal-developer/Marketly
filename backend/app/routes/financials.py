@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from app.services.financials import fetch_stock_financials
-from app.services.utils import sanitize
+from app.utils.sanitizer_util import sanitize
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
