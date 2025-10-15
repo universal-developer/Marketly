@@ -4,86 +4,147 @@ import math
 from app.utils.sanitizer_util import sanitize
 
 
+import yfinance as yf
+from app.utils.sanitizer_util import sanitize
+
+
 def fetch_stock_financials(symbol: str) -> dict:
+    """
+    Fetch a clean, GPT-ready financial profile for a company.
+    Includes only essential fundamentals, valuation ratios,
+    analyst sentiment, and limited historical context.
+    """
+
     try:
         ticker = yf.Ticker(symbol)
-        stock_data = {"symbol": symbol}
 
-        # --- Basics ---
-        stock_data["info"] = ticker.get_info()
-        stock_data["calendar"] = ticker.get_calendar()
-        stock_data["isin"] = ticker.get_isin()
+        # --- Helper to trim long time series ---
+        def trim_dict(d: dict, n=7):
+            if not isinstance(d, dict):
+                return d
+            items = list(d.items())
+            return dict(items[:n])  # Yahoo lists most recent first
 
-        # --- Financials ---
-        stock_data["income_statement"] = {
-            "annual": ticker.get_income_stmt(as_dict=True, freq="yearly"),
-            "quarterly": ticker.get_income_stmt(as_dict=True, freq="quarterly"),
-            "ttm": ticker.get_income_stmt(as_dict=True, freq="trailing"),
-        }
-        stock_data["balance_sheet"] = {
-            "annual": ticker.get_balance_sheet(as_dict=True, freq="yearly"),
-            "quarterly": ticker.get_balance_sheet(as_dict=True, freq="quarterly"),
-        }
-        stock_data["cash_flow"] = {
-            "annual": ticker.get_cash_flow(as_dict=True, freq="yearly"),
-            "quarterly": ticker.get_cash_flow(as_dict=True, freq="quarterly"),
-            # "ttm": ticker.get_ttm_cash_flow(as_dict=True),
+        # --- Basics / Valuation ---
+        info = ticker.get_info()
+        info_filtered = {
+            k: info.get(k)
+            for k in [
+                "shortName", "sector", "industry", "country", "currency",
+                "marketCap", "sharesOutstanding",
+                "trailingPE", "forwardPE", "pegRatio",
+                "priceToBook", "priceToSalesTrailing12Months",
+                "dividendYield", "payoutRatio", "beta"
+            ]
         }
 
-        # --- Dividends, Splits, Actions ---
-        stock_data["dividends"] = ticker.get_dividends(period="10y").to_dict()
-        stock_data["splits"] = ticker.get_splits(period="10y").to_dict()
-        stock_data["actions"] = ticker.get_actions(period="10y").to_dict()
+        stock_data = {
+            "symbol": symbol,
+            "info": info_filtered,
+            "isin": ticker.get_isin(),
+            "calendar": ticker.get_calendar(),
+        }
 
-        # --- Earnings ---
-        stock_data["earnings_dates"] = (
-            ticker.get_earnings_dates(limit=12).to_dict()
-            if ticker.get_earnings_dates(limit=12) is not None
-            else {}
-        )
-        stock_data["earnings_estimate"] = ticker.get_earnings_estimate(
-            as_dict=True)
-        stock_data["earnings_history"] = ticker.get_earnings_history(
-            as_dict=True)
-        stock_data["eps_trend"] = ticker.get_eps_trend(as_dict=True)
-        stock_data["eps_revisions"] = ticker.get_eps_revisions(as_dict=True)
+        # --- Income Statement (trimmed) ---
+        income_annual = trim_dict(
+            ticker.get_income_stmt(as_dict=True, freq="yearly"))
+        income_quarter = trim_dict(ticker.get_income_stmt(
+            as_dict=True, freq="quarterly"), 8)
 
-        # --- Holders & Insiders ---
-        stock_data["institutional_holders"] = ticker.get_institutional_holders(
-            as_dict=True)
-        stock_data["mutualfund_holders"] = ticker.get_mutualfund_holders(
-            as_dict=True)
-        stock_data["major_holders"] = ticker.get_major_holders(as_dict=True)
-        stock_data["insider_transactions"] = ticker.get_insider_transactions(
-            as_dict=True)
-        stock_data["insider_roster"] = ticker.get_insider_roster_holders(
-            as_dict=True)
-        stock_data["insider_purchases"] = ticker.get_insider_purchases(
-            as_dict=True)
+        income_filtered = {
+            "annual": {
+                date: {k: v for k, v in row.items() if k in [
+                    "TotalRevenue", "GrossProfit", "OperatingIncome", "NetIncome",
+                    "EBIT", "EBITDA", "BasicEPS", "DilutedEPS"
+                ]}
+                for date, row in income_annual.items()
+            },
+            "quarterly": {
+                date: {k: v for k, v in row.items() if k in [
+                    "TotalRevenue", "GrossProfit", "OperatingIncome", "NetIncome",
+                    "EBIT", "EBITDA", "BasicEPS", "DilutedEPS"
+                ]}
+                for date, row in income_quarter.items()
+            },
+        }
 
-        # --- Recommendations & Ratings ---
-        stock_data["recommendations"] = ticker.get_recommendations(
-            as_dict=True)
-        stock_data["recommendations_summary"] = ticker.get_recommendations_summary(
-            as_dict=True)
-        stock_data["upgrades_downgrades"] = ticker.get_upgrades_downgrades(
-            as_dict=True)
-        stock_data["analyst_price_targets"] = ticker.get_analyst_price_targets()
+        # --- Balance Sheet (trimmed) ---
+        balance_annual = trim_dict(
+            ticker.get_balance_sheet(as_dict=True, freq="yearly"))
+        balance_quarter = trim_dict(ticker.get_balance_sheet(
+            as_dict=True, freq="quarterly"), 8)
 
-        # --- Estimates & Growth ---
-        stock_data["revenue_estimate"] = ticker.get_revenue_estimate(
-            as_dict=True)
-        stock_data["growth_estimates"] = ticker.get_growth_estimates(
-            as_dict=True)
+        balance_filtered = {
+            "annual": {
+                date: {k: v for k, v in row.items() if k in [
+                    "TotalAssets", "TotalLiabilitiesNetMinorityInterest",
+                    "TotalEquityGrossMinorityInterest", "CashAndCashEquivalents",
+                    "CurrentAssets", "CurrentLiabilities",
+                    "ShortTermDebt", "LongTermDebt"
+                ]}
+                for date, row in balance_annual.items()
+            },
+            "quarterly": {
+                date: {k: v for k, v in row.items() if k in [
+                    "TotalAssets", "TotalLiabilitiesNetMinorityInterest",
+                    "TotalEquityGrossMinorityInterest", "CashAndCashEquivalents",
+                    "CurrentAssets", "CurrentLiabilities",
+                    "ShortTermDebt", "LongTermDebt"
+                ]}
+                for date, row in balance_quarter.items()
+            },
+        }
 
-        # --- SEC & Sustainability ---
-        stock_data["sec_filings"] = ticker.get_sec_filings()
-        stock_data["sustainability"] = ticker.get_sustainability(as_dict=True)
+        # --- Cash Flow (trimmed) ---
+        cash_annual = trim_dict(
+            ticker.get_cash_flow(as_dict=True, freq="yearly"))
+        cash_quarter = trim_dict(ticker.get_cash_flow(
+            as_dict=True, freq="quarterly"), 8)
 
-        # --- News ---
-        stock_data["news"] = ticker.get_news(count=10, tab="all")
+        cash_filtered = {
+            "annual": {
+                date: {k: v for k, v in row.items() if k in [
+                    "OperatingCashFlow", "FreeCashFlow",
+                    "CapitalExpenditures", "DepreciationAndAmortization"
+                ]}
+                for date, row in cash_annual.items()
+            },
+            "quarterly": {
+                date: {k: v for k, v in row.items() if k in [
+                    "OperatingCashFlow", "FreeCashFlow",
+                    "CapitalExpenditures", "DepreciationAndAmortization"
+                ]}
+                for date, row in cash_quarter.items()
+            },
+        }
 
-        return stock_data
+        # --- Analyst / Sentiment Data ---
+        analyst_data = {
+            "recommendations_summary": ticker.get_recommendations_summary(as_dict=True),
+            "price_targets": ticker.get_analyst_price_targets(),
+            "growth_estimates": ticker.get_growth_estimates(as_dict=True),
+            "earnings_estimate": ticker.get_earnings_estimate(as_dict=True),
+        }
+
+        # --- Insider sentiment (optional) ---
+        insider_tx = ticker.get_insider_transactions(as_dict=True)
+        if isinstance(insider_tx, list):
+            insider_tx = insider_tx[:10]  # limit to 10 latest
+
+        # --- Dividends (5y) ---
+        dividends = ticker.get_dividends(period="5y").to_dict()
+
+        # --- Assemble final clean dict ---
+        stock_data.update({
+            "income_statement": income_filtered,
+            "balance_sheet": balance_filtered,
+            "cash_flow": cash_filtered,
+            "analyst_data": analyst_data,
+            "insider_transactions": insider_tx,
+            "dividends": dividends,
+        })
+
+        return sanitize(stock_data)
 
     except Exception as e:
         return {"symbol": symbol, "error": str(e)}
@@ -91,20 +152,23 @@ def fetch_stock_financials(symbol: str) -> dict:
 
 def summarize_financials(stock_data: dict) -> dict:
     """
-    Summarize and organize financial data for AI analysis.
-    Keep only the most meaningful, structured, and human-readable parts.
+    Lightweight summary of essential financial metrics for GPT analysis and dashboards.
+    Keeps only the most recent and meaningful values for fast AI scoring and display.
     """
 
     try:
+        def latest(d: dict, key: str):
+            """Safely get the most recent entry from annual/quarterly data."""
+            section = d.get(key, {})
+            if not section or not isinstance(section, dict):
+                return None
+            return next(iter(section.values()), None)
+
         info = stock_data.get("info", {})
         income = stock_data.get("income_statement", {})
         balance = stock_data.get("balance_sheet", {})
         cash_flow = stock_data.get("cash_flow", {})
-        recs = stock_data.get("recommendations_summary", {})
-        targets = stock_data.get("analyst_price_targets", {})
-        earnings = stock_data.get("earnings_estimate", {})
-        revenue_est = stock_data.get("revenue_estimate", {})
-        growth = stock_data.get("growth_estimates", {})
+        analyst = stock_data.get("analyst_data", {})
 
         summary = {
             "symbol": stock_data.get("symbol"),
@@ -121,28 +185,37 @@ def summarize_financials(stock_data: dict) -> dict:
                 "forward_pe": info.get("forwardPE"),
                 "peg_ratio": info.get("pegRatio"),
                 "price_to_book": info.get("priceToBook"),
+                "price_to_sales": info.get("priceToSalesTrailing12Months"),
                 "dividend_yield": info.get("dividendYield"),
                 "beta": info.get("beta"),
             },
             "income_statement": {
                 "ttm": income.get("ttm"),
-                "latest_annual": next(iter(income.get("annual", {}).values()), None),
-                "latest_quarter": next(iter(income.get("quarterly", {}).values()), None),
+                "latest_annual": latest(income, "annual"),
+                "latest_quarter": latest(income, "quarterly"),
             },
             "balance_sheet": {
-                "latest_annual": next(iter(balance.get("annual", {}).values()), None),
-                "latest_quarter": next(iter(balance.get("quarterly", {}).values()), None),
+                "latest_annual": latest(balance, "annual"),
+                "latest_quarter": latest(balance, "quarterly"),
             },
             "cash_flow": {
-                "latest_annual": next(iter(cash_flow.get("annual", {}).values()), None),
-                "latest_quarter": next(iter(cash_flow.get("quarterly", {}).values()), None),
+                "latest_annual": latest(cash_flow, "annual"),
+                "latest_quarter": latest(cash_flow, "quarterly"),
+            },
+            "balance_summary": {
+                "total_assets": (latest(balance, "annual") or {}).get("TotalAssets"),
+                "total_liabilities": (latest(balance, "annual") or {}).get("TotalLiabilitiesNetMinorityInterest"),
+                "cash": (latest(balance, "annual") or {}).get("CashAndCashEquivalents"),
+                "debt": (
+                    ((latest(balance, "annual") or {}).get("ShortTermDebt") or 0)
+                    + ((latest(balance, "annual") or {}).get("LongTermDebt") or 0)
+                ),
             },
             "analyst_data": {
-                "recommendations_summary": recs,
-                "price_targets": targets,
-                "earnings_estimate": earnings,
-                "revenue_estimate": revenue_est,
-                "growth_estimates": growth,
+                "recommendations_summary": analyst.get("recommendations_summary"),
+                "price_targets": analyst.get("price_targets"),
+                "earnings_estimate": analyst.get("earnings_estimate"),
+                "growth_estimates": analyst.get("growth_estimates"),
             },
         }
 
