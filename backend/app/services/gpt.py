@@ -1,21 +1,32 @@
 # app/services/gpt.py
+
 import os
+import json
 from dotenv import load_dotenv
 from openai import OpenAI
-import json
+
+# internal helpers
 from app.utils.sanitizer_util import sanitize
+from app.services.financials import fetch_stock_financials, summarize_financials
 
 
 load_dotenv()  # loads .env file
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def score_stock(financial_data: dict, financials_summary: dict, news_data: dict, economical_data: dict) -> dict:
+def score_stock(financials_summary: dict, news_data: dict, economical_data: dict) -> dict:
     safe_payload = {
-        "financials_summary": financials_summary,   # already clean
+        "company_overview": financials_summary.get("company"),
+        "valuation_metrics": financials_summary.get("valuation"),
+        "financials": {
+            "income_statement": financials_summary.get("income_statement"),
+            "balance_sheet": financials_summary.get("balance_sheet"),
+            "cash_flow": financials_summary.get("cash_flow"),
+            "balance_summary": financials_summary.get("balance_summary"),
+        },
+        "analyst_data": financials_summary.get("analyst_data"),
         "news_data": news_data,                     # raw text = fine
         "economical_data": economical_data,          # from FRED, already numeric
-        "financial_data": sanitize(financial_data)
     }
 
     # Then truncate or serialize safely once
