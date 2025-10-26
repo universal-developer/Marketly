@@ -1,6 +1,6 @@
 import time
 from fastapi import APIRouter
-from app.services.economics import fetch_macro_indicators
+from app.services.fetchers.economics import fetch_macro_indicators
 
 router = APIRouter()
 

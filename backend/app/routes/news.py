@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query
-from app.services.news import get_news, get_news_grouped, get_news_mixed
+from app.services.fetchers.news import get_news, get_news_grouped, get_news_mixed
 
 router = APIRouter(prefix="/news", tags=["news"])
 

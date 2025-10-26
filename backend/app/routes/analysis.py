@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
-from app.services.financials import fetch_stock_financials, summarize_financials
-from app.services.economics import fetch_macro_indicators
-from app.services.news import get_news
+from app.services.fetchers.financials import fetch_stock_financials, summarize_financials
+from app.services.fetchers.economics import fetch_macro_indicators
+from app.services.fetchers.news import get_news
 from app.services.gpt import score_stock
 
 router = APIRouter()

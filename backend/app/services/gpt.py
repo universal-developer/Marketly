@@ -7,7 +7,7 @@ from openai import OpenAI
 
 # internal helpers
 from app.utils.sanitizer_util import sanitize
-from app.services.financials import fetch_stock_financials, summarize_financials
+from app.services.fetchers.financials import fetch_stock_financials, summarize_financials
 
 
 load_dotenv()  # loads .env file

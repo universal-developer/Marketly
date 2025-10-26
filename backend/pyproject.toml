@@ -1,0 +1,26 @@
+[tool.black]
+line-length = 88
+target-version = ['py313']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.venv
+  | build
+  | dist
+  | migrations
+  | __pycache__
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+combine_as_imports = true
+skip = ["venv", "__pycache__"]
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "I"]
+ignore = ["E501"]  # ignore long line warning (handled by black)
+exclude = ["__pycache__", "venv"]
+target-version = "py313"
