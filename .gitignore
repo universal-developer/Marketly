@@ -5,3 +5,7 @@ grouped_articles.json
 mixed_articles.json
 company_financials.json
 single_company_articles.json
+# Ignore Python cache
+__pycache__/
+*.py[cod]
+
