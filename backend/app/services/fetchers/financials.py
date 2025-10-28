@@ -8,147 +8,160 @@ import yfinance as yf
 from app.utils.sanitizer_util import sanitize
 
 
+import yfinance as yf
+import time
+from app.utils.sanitizer_util import sanitize
+
+
 def fetch_stock_financials(symbol: str) -> dict:
     """
     Fetch a clean, GPT-ready financial profile for a company.
     Includes only essential fundamentals, valuation ratios,
     analyst sentiment, and limited historical context.
+    Automatically retries if Yahoo Finance returns empty or fails.
     """
 
-    try:
-        ticker = yf.Ticker(symbol)
+    max_retries = 3
 
-        # --- Helper to trim long time series ---
-        def trim_dict(d: dict, n=7):
-            if not isinstance(d, dict):
-                return d
-            items = list(d.items())
-            return dict(items[:n])  # Yahoo lists most recent first
+    # --- Helper to trim long time series ---
+    def trim_dict(d: dict, n=7):
+        if not isinstance(d, dict):
+            return d
+        items = list(d.items())
+        return dict(items[:n])  # Yahoo lists most recent first
 
-        # --- Basics / Valuation ---
-        info = ticker.get_info()
-        info_filtered = {
-            k: info.get(k)
-            for k in [
-                "shortName", "sector", "industry", "country", "currency",
-                "marketCap", "sharesOutstanding",
-                "trailingPE", "forwardPE", "pegRatio",
-                "priceToBook", "priceToSalesTrailing12Months",
-                "dividendYield", "payoutRatio", "beta"
-            ]
-        }
+    for attempt in range(max_retries):
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.get_info()
 
-        stock_data = {
-            "symbol": symbol,
-            "info": info_filtered,
-            "isin": ticker.get_isin(),
-            "calendar": ticker.get_calendar(),
-        }
+            # if info is empty, Yahoo is likely down — retry
+            if not info:
+                print(f"[WARN] Empty data from Yahoo for {symbol}, retry {attempt + 1}/{max_retries}")
+                time.sleep(2 ** attempt)
+                continue
 
-        # --- Income Statement (trimmed) ---
-        income_annual = trim_dict(
-            ticker.get_income_stmt(as_dict=True, freq="yearly"))
-        income_quarter = trim_dict(ticker.get_income_stmt(
-            as_dict=True, freq="quarterly"), 8)
+            # --- Basics / Valuation ---
+            info_filtered = {
+                k: info.get(k)
+                for k in [
+                    "shortName", "sector", "industry", "country", "currency",
+                    "marketCap", "sharesOutstanding",
+                    "trailingPE", "forwardPE", "pegRatio",
+                    "priceToBook", "priceToSalesTrailing12Months",
+                    "dividendYield", "payoutRatio", "beta"
+                ]
+            }
 
-        income_filtered = {
-            "annual": {
-                date: {k: v for k, v in row.items() if k in [
-                    "TotalRevenue", "GrossProfit", "OperatingIncome", "NetIncome",
-                    "EBIT", "EBITDA", "BasicEPS", "DilutedEPS"
-                ]}
-                for date, row in income_annual.items()
-            },
-            "quarterly": {
-                date: {k: v for k, v in row.items() if k in [
-                    "TotalRevenue", "GrossProfit", "OperatingIncome", "NetIncome",
-                    "EBIT", "EBITDA", "BasicEPS", "DilutedEPS"
-                ]}
-                for date, row in income_quarter.items()
-            },
-        }
+            stock_data = {
+                "symbol": symbol,
+                "info": info_filtered,
+                "isin": ticker.get_isin(),
+                "calendar": ticker.get_calendar(),
+            }
 
-        # --- Balance Sheet (trimmed) ---
-        balance_annual = trim_dict(
-            ticker.get_balance_sheet(as_dict=True, freq="yearly"))
-        balance_quarter = trim_dict(ticker.get_balance_sheet(
-            as_dict=True, freq="quarterly"), 8)
+            # --- Income Statement (trimmed) ---
+            income_annual = trim_dict(ticker.get_income_stmt(as_dict=True, freq="yearly"))
+            income_quarter = trim_dict(ticker.get_income_stmt(as_dict=True, freq="quarterly"), 8)
 
-        balance_filtered = {
-            "annual": {
-                date: {k: v for k, v in row.items() if k in [
-                    "TotalAssets", "TotalLiabilitiesNetMinorityInterest",
-                    "TotalEquityGrossMinorityInterest", "CashAndCashEquivalents",
-                    "CurrentAssets", "CurrentLiabilities",
-                    "ShortTermDebt", "LongTermDebt"
-                ]}
-                for date, row in balance_annual.items()
-            },
-            "quarterly": {
-                date: {k: v for k, v in row.items() if k in [
-                    "TotalAssets", "TotalLiabilitiesNetMinorityInterest",
-                    "TotalEquityGrossMinorityInterest", "CashAndCashEquivalents",
-                    "CurrentAssets", "CurrentLiabilities",
-                    "ShortTermDebt", "LongTermDebt"
-                ]}
-                for date, row in balance_quarter.items()
-            },
-        }
+            income_filtered = {
+                "annual": {
+                    date: {k: v for k, v in row.items() if k in [
+                        "TotalRevenue", "GrossProfit", "OperatingIncome", "NetIncome",
+                        "EBIT", "EBITDA", "BasicEPS", "DilutedEPS"
+                    ]}
+                    for date, row in income_annual.items()
+                },
+                "quarterly": {
+                    date: {k: v for k, v in row.items() if k in [
+                        "TotalRevenue", "GrossProfit", "OperatingIncome", "NetIncome",
+                        "EBIT", "EBITDA", "BasicEPS", "DilutedEPS"
+                    ]}
+                    for date, row in income_quarter.items()
+                },
+            }
 
-        # --- Cash Flow (trimmed) ---
-        cash_annual = trim_dict(
-            ticker.get_cash_flow(as_dict=True, freq="yearly"))
-        cash_quarter = trim_dict(ticker.get_cash_flow(
-            as_dict=True, freq="quarterly"), 8)
+            # --- Balance Sheet (trimmed) ---
+            balance_annual = trim_dict(ticker.get_balance_sheet(as_dict=True, freq="yearly"))
+            balance_quarter = trim_dict(ticker.get_balance_sheet(as_dict=True, freq="quarterly"), 8)
 
-        cash_filtered = {
-            "annual": {
-                date: {k: v for k, v in row.items() if k in [
-                    "OperatingCashFlow", "FreeCashFlow",
-                    "CapitalExpenditures", "DepreciationAndAmortization"
-                ]}
-                for date, row in cash_annual.items()
-            },
-            "quarterly": {
-                date: {k: v for k, v in row.items() if k in [
-                    "OperatingCashFlow", "FreeCashFlow",
-                    "CapitalExpenditures", "DepreciationAndAmortization"
-                ]}
-                for date, row in cash_quarter.items()
-            },
-        }
+            balance_filtered = {
+                "annual": {
+                    date: {k: v for k, v in row.items() if k in [
+                        "TotalAssets", "TotalLiabilitiesNetMinorityInterest",
+                        "TotalEquityGrossMinorityInterest", "CashAndCashEquivalents",
+                        "CurrentAssets", "CurrentLiabilities",
+                        "ShortTermDebt", "LongTermDebt"
+                    ]}
+                    for date, row in balance_annual.items()
+                },
+                "quarterly": {
+                    date: {k: v for k, v in row.items() if k in [
+                        "TotalAssets", "TotalLiabilitiesNetMinorityInterest",
+                        "TotalEquityGrossMinorityInterest", "CashAndCashEquivalents",
+                        "CurrentAssets", "CurrentLiabilities",
+                        "ShortTermDebt", "LongTermDebt"
+                    ]}
+                    for date, row in balance_quarter.items()
+                },
+            }
 
-        # --- Analyst / Sentiment Data ---
-        analyst_data = {
-            "recommendations_summary": ticker.get_recommendations_summary(as_dict=True),
-            "price_targets": ticker.get_analyst_price_targets(),
-            "growth_estimates": ticker.get_growth_estimates(as_dict=True),
-            "earnings_estimate": ticker.get_earnings_estimate(as_dict=True),
-        }
+            # --- Cash Flow (trimmed) ---
+            cash_annual = trim_dict(ticker.get_cash_flow(as_dict=True, freq="yearly"))
+            cash_quarter = trim_dict(ticker.get_cash_flow(as_dict=True, freq="quarterly"), 8)
 
-        # --- Insider sentiment (optional) ---
-        insider_tx = ticker.get_insider_transactions(as_dict=True)
-        if isinstance(insider_tx, list):
-            insider_tx = insider_tx[:10]  # limit to 10 latest
+            cash_filtered = {
+                "annual": {
+                    date: {k: v for k, v in row.items() if k in [
+                        "OperatingCashFlow", "FreeCashFlow",
+                        "CapitalExpenditures", "DepreciationAndAmortization"
+                    ]}
+                    for date, row in cash_annual.items()
+                },
+                "quarterly": {
+                    date: {k: v for k, v in row.items() if k in [
+                        "OperatingCashFlow", "FreeCashFlow",
+                        "CapitalExpenditures", "DepreciationAndAmortization"
+                    ]}
+                    for date, row in cash_quarter.items()
+                },
+            }
 
-        # --- Dividends (5y) ---
-        dividends = ticker.get_dividends(period="5y").to_dict()
+            # --- Analyst / Sentiment Data ---
+            analyst_data = {
+                "recommendations_summary": ticker.get_recommendations_summary(as_dict=True),
+                "price_targets": ticker.get_analyst_price_targets(),
+                "growth_estimates": ticker.get_growth_estimates(as_dict=True),
+                "earnings_estimate": ticker.get_earnings_estimate(as_dict=True),
+            }
 
-        # --- Assemble final clean dict ---
-        stock_data.update({
-            "income_statement": income_filtered,
-            "balance_sheet": balance_filtered,
-            "cash_flow": cash_filtered,
-            "analyst_data": analyst_data,
-            "insider_transactions": insider_tx,
-            "dividends": dividends,
-        })
+            # --- Insider sentiment (optional) ---
+            insider_tx = ticker.get_insider_transactions(as_dict=True)
+            if isinstance(insider_tx, list):
+                insider_tx = insider_tx[:10]  # limit to 10 latest
 
-        return sanitize(stock_data)
+            # --- Dividends (5y) ---
+            dividends = ticker.get_dividends(period="5y").to_dict()
 
-    except Exception as e:
-        return {"symbol": symbol, "error": str(e)}
+            # --- Assemble final clean dict ---
+            stock_data.update({
+                "income_statement": income_filtered,
+                "balance_sheet": balance_filtered,
+                "cash_flow": cash_filtered,
+                "analyst_data": analyst_data,
+                "insider_transactions": insider_tx,
+                "dividends": dividends,
+            })
 
+            return sanitize(stock_data)
+
+        except Exception as e:
+            print(f"[ERROR] Yahoo fetch failed for {symbol} (attempt {attempt + 1}/{max_retries}): {e}")
+            time.sleep(2 ** attempt)
+
+    # --- If all retries failed ---
+    print(f"[ERROR] Yahoo consistently failed for {symbol} after {max_retries} retries.")
+    return {"symbol": symbol, "error": "Yahoo Finance unavailable"}
 
 def summarize_financials(stock_data: dict) -> dict:
     """
