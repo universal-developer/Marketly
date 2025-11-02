@@ -7,133 +7,128 @@ from openai import OpenAI
 
 # internal helpers
 from app.utils.sanitizer_util import sanitize
-from app.services.fetchers.financials import fetch_stock_financials, summarize_financials
+from app.services.fetchers.financials import fetch_stock_financials  # summarize_financials removed
 
-
-load_dotenv()  # loads .env file
+load_dotenv()  # Load environment variables from .env
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def score_stock(financials_summary: dict, news_data: dict, economical_data: dict) -> dict:
+def score_stock(financial_data: dict, news_data: dict | list, economical_data: dict) -> dict:
+    """
+    Evaluate a stock using financial, macroeconomic, and news data via GPT model.
+    Returns a structured score with summary, positives, and negatives.
+    """
+
+    info = financial_data.get("info", {})
+
+    # --- Safe, minimal payload ---
     safe_payload = {
-        "company_overview": financials_summary.get("company"),
-        "valuation_metrics": financials_summary.get("valuation"),
-        "financials": {
-            "income_statement": financials_summary.get("income_statement"),
-            "balance_sheet": financials_summary.get("balance_sheet"),
-            "cash_flow": financials_summary.get("cash_flow"),
-            "balance_summary": financials_summary.get("balance_summary"),
+        "company_overview": {
+            "name": info.get("shortName"),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "country": info.get("country"),
+            "currency": info.get("currency"),
+            "market_cap": info.get("marketCap"),
         },
-        "analyst_data": financials_summary.get("analyst_data"),
-        "news_data": news_data,                     # raw text = fine
-        "economical_data": economical_data,          # from FRED, already numeric
+        "valuation_metrics": {
+            "trailingPE": info.get("trailingPE"),
+            "forwardPE": info.get("forwardPE"),
+            "peg_ratio": info.get("pegRatio"),
+            "price_to_book": info.get("priceToBook"),
+            "price_to_sales": info.get("priceToSalesTrailing12Months"),
+            "dividend_yield": info.get("dividendYield"),
+            "beta": info.get("beta"),
+        },
+        "financials": {
+            "income_statement": financial_data.get("income_statement"),
+            "balance_sheet": financial_data.get("balance_sheet"),
+            "cash_flow": financial_data.get("cash_flow"),
+        },
+        "analyst_data": financial_data.get("analyst_data"),
+        "news_data": news_data[:20] if isinstance(news_data, list) else news_data,  # limit for safety
+        "economical_data": economical_data,
     }
 
-    # Then truncate or serialize safely once
-    safe_payload_json = json.dumps(safe_payload)[:20000]
+    # --- Truncate for token safety ---
+    safe_payload_json = json.dumps(safe_payload, ensure_ascii=False)[:20000]
 
-    response = client.chat.completions.create(
-        model="gpt-5-nano-2025-08-07",
-        # temperature=0,  # deterministic scores
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    """You are acting as a world-class equity analyst with the rigor of a quant fund manager. 
-                    Think like a hyper-rational investor who ignores hype and sentiment, and only cares about 
-                    fundamentals, risk-adjusted return, and statistical evidence. You are blunt, data-driven, 
-                    and intolerant of vague reasoning.
+    try:
+        response = client.chat.completions.create(
+            model="gpt-5-nano-2025-08-07",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        """You are a world-class equity analyst and quant strategist.
+                        Evaluate the investment quality of a stock from 0 to 100 using 
+                        fundamentals, macroeconomic data, and recent news.
 
-                    Your task: evaluate the investment quality of a stock from 0 to 100 using fundamental 
-                    financial data, recent news, and macroeconomic indicators.
+                        Follow this rubric strictly:
 
-                    Scoring rubric (apply precisely, no exceptions):
+                        1. Profitability & Margins (0–17)
+                        2. Growth & Stability (0–17)
+                        3. Valuation (0–17)
+                        4. Balance Sheet & Risk (0–17)
+                        5. Market & News Signals (0–16)
+                        6. Macro & Market Conditions (0–16)
 
-                    1. Profitability & Margins (0–17 points)
-                    - EPS trend (quarterly & annual)
-                    - Net margins vs. industry peers
-                    - ROE / ROA efficiency
+                        Scoring scale:
+                        0–20 = Extremely weak, avoid
+                        21–40 = Weak, speculative
+                        41–60 = Average, mixed signals
+                        61–80 = Strong, attractive
+                        81–100 = Exceptional, top-tier
 
-                    2. Growth & Stability (0–17 points)
-                    - Revenue CAGR (3–5 years)
-                    - EPS growth trajectory
-                    - Revenue consistency vs. cyclicality
-
-                    3. Valuation (0–17 points)
-                    - Forward P/E vs. sector
-                    - Price-to-sales, price-to-book
-                    - Free cash flow yield
-
-                    4. Balance Sheet & Risk (0–17 points)
-                    - Debt-to-equity, interest coverage
-                    - Liquidity ratios (current ratio, quick ratio)
-                    - Dividend sustainability
-
-                    5. Market & News Signals (0–16 points)
-                    - Consensus analyst ratings (buy/hold/sell ratios)
-                    - Price targets vs. current price
-                    - Insider buying/selling and institutional flows
-                    - Recent news headlines: catalysts, risks, regulatory events
-
-                    6. Macro & Market Conditions (0–16 points)
-                    - GDP growth and unemployment trends
-                    - Inflation and interest rate environment
-                    - Yield curve signals
-                    - Commodity shocks (oil, etc.)
-
-                    Scoring scale:
-                    - 0–20 = Extremely weak, avoid
-                    - 21–40 = Weak, speculative
-                    - 41–60 = Average, mixed signals
-                    - 61–80 = Strong, attractive
-                    - 81–100 = Exceptional, top-tier
-
-                    Rules:
-                    - Be concise, no long essays.
-                    - Always back claims with explicit data points from input.
-                    - Ignore irrelevant details (executive bios, addresses, etc.).
-                    - Never hedge with "maybe" or "possibly."
-                    - Act like capital allocation depends on your score being correct.
-
-                    Output JSON strictly in this schema:
-                    {
-                    "score": integer,
-                    "summary": string,
-                    "positives": [string],
-                    "negatives": [string]
-                    }"""
-                )
-
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Stock's financials, economical (FRED), news data: {safe_payload_json}\n\n"
-                )
-            }
-        ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "stock_score",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "score": {"type": "integer"},
-                        "summary": {"type": "string"},
-                        "positives": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "negatives": {
-                            "type": "array",
-                            "items": {"type": "string"}
+                        Output concise, data-backed insights only.
+                        JSON schema:
+                        {
+                            "score": integer,
+                            "summary": string,
+                            "positives": [string],
+                            "negatives": [string]
                         }
-                    },
-                    "required": ["score", "summary"]
+                        """
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"Stock data (financials, macro, news): {safe_payload_json}"
                 }
-            }
-        },
-    )
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "stock_score",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "score": {"type": "integer"},
+                            "summary": {"type": "string"},
+                            "positives": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                            },
+                            "negatives": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                            },
+                        },
+                        "required": ["score", "summary"]
+                    },
+                },
+            },
+        )
 
-    return json.loads(response.choices[0].message.content)
+        content = response.choices[0].message.content
+        parsed = json.loads(content)
+
+        # Ensure keys always exist
+        parsed.setdefault("positives", [])
+        parsed.setdefault("negatives", [])
+
+        return sanitize(parsed)
+
+    except Exception as e:
+        print(f"[ERROR] GPT scoring failed: {e}")
+        return {"error": str(e)}

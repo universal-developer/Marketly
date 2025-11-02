@@ -1,232 +1,251 @@
+# app/services/fetchers/financials.py
+
+import os
+import json
+import requests
 import yfinance as yf
-import datetime
-import math
-import time
-from app.utils.sanitizer_util import sanitize
+from dotenv import load_dotenv
+from app.core.cache import CacheManager
+
+# === Load environment variables ===
+load_dotenv()
+
+# === API Base URLs ===
+FINNHUB = "https://finnhub.io/api/v1"
+FMP = "https://financialmodelingprep.com/api/v3"
+TWELVE = "https://api.twelvedata.com"
+RAPIDAPI_HOST = "yh-finance.p.rapidapi.com"  # YH Finance by SteadyAPI (RapidAPI)
+
+# === API Keys ===
+FINNHUB_KEY = os.getenv("FINNHUB_API_KEY")
+FMP_KEY = os.getenv("FMPSDK_API_KEY")
+TWELVE_KEY = os.getenv("TWELVE_API_KEY")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
 
+# =====================================================================
+# 🧩 Generic Safe GET Wrapper
+# =====================================================================
+def safe_get(url, params=None, source_name=""):
+    """Perform a safe GET request that never raises; logs minimal info."""
+    try:
+        r = requests.get(url, params=params or {}, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if isinstance(data, dict) and data.get("status") == "error":
+            print(f"⚠️  {source_name}: {data.get('message', 'API returned error')}")
+            return None
+        return data
+    except Exception as e:
+        print(f"⚠️  {source_name} failed: {e}")
+        return None
 
 
-def fetch_stock_financials(symbol: str) -> dict:
-    """
-    Fetch a clean, GPT-ready financial profile for a company.
-    Includes only essential fundamentals, valuation ratios,
-    analyst sentiment, and limited historical context.
-    Automatically retries if Yahoo Finance returns empty or fails.
-    """
+# =====================================================================
+# 🧩 YH Finance (RapidAPI SteadyAPI) — Reliable Yahoo Alternative
+# =====================================================================
+def fetch_yahoo_summary(symbol: str) -> dict:
+    """Fetches stock data from YH Finance (RapidAPI by SteadyAPI)."""
+    if not RAPIDAPI_KEY:
+        print("⚠️  RAPIDAPI_KEY missing — skipping YH Finance block")
+        return {}
 
-    max_retries = 3
-
-    # --- Helper to trim long time series ---
-    def trim_dict(d: dict, n=7):
-        if not isinstance(d, dict):
-            return d
-        items = list(d.items())
-        return dict(items[:n])  # Yahoo lists most recent first
-
-    for attempt in range(max_retries):
-        try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.get_info()
-
-            # if info is empty, Yahoo is likely down — retry
-            if not info:
-                print(f"[WARN] Empty data from Yahoo for {symbol}, retry {attempt + 1}/{max_retries}")
-                time.sleep(2 ** attempt)
-                continue
-
-            # --- Basics / Valuation ---
-            info_filtered = {
-                k: info.get(k)
-                for k in [
-                    "shortName", "sector", "industry", "country", "currency",
-                    "marketCap", "sharesOutstanding",
-                    "trailingPE", "forwardPE", "pegRatio",
-                    "priceToBook", "priceToSalesTrailing12Months",
-                    "dividendYield", "payoutRatio", "beta"
-                ]
-            }
-
-            stock_data = {
-                "symbol": symbol,
-                "info": info_filtered,
-                "isin": ticker.get_isin(),
-                "calendar": ticker.get_calendar(),
-            }
-
-            # --- Income Statement (trimmed) ---
-            income_annual = trim_dict(ticker.get_income_stmt(as_dict=True, freq="yearly"))
-            income_quarter = trim_dict(ticker.get_income_stmt(as_dict=True, freq="quarterly"), 8)
-
-            income_filtered = {
-                "annual": {
-                    date: {k: v for k, v in row.items() if k in [
-                        "TotalRevenue", "GrossProfit", "OperatingIncome", "NetIncome",
-                        "EBIT", "EBITDA", "BasicEPS", "DilutedEPS"
-                    ]}
-                    for date, row in income_annual.items()
-                },
-                "quarterly": {
-                    date: {k: v for k, v in row.items() if k in [
-                        "TotalRevenue", "GrossProfit", "OperatingIncome", "NetIncome",
-                        "EBIT", "EBITDA", "BasicEPS", "DilutedEPS"
-                    ]}
-                    for date, row in income_quarter.items()
-                },
-            }
-
-            # --- Balance Sheet (trimmed) ---
-            balance_annual = trim_dict(ticker.get_balance_sheet(as_dict=True, freq="yearly"))
-            balance_quarter = trim_dict(ticker.get_balance_sheet(as_dict=True, freq="quarterly"), 8)
-
-            balance_filtered = {
-                "annual": {
-                    date: {k: v for k, v in row.items() if k in [
-                        "TotalAssets", "TotalLiabilitiesNetMinorityInterest",
-                        "TotalEquityGrossMinorityInterest", "CashAndCashEquivalents",
-                        "CurrentAssets", "CurrentLiabilities",
-                        "ShortTermDebt", "LongTermDebt"
-                    ]}
-                    for date, row in balance_annual.items()
-                },
-                "quarterly": {
-                    date: {k: v for k, v in row.items() if k in [
-                        "TotalAssets", "TotalLiabilitiesNetMinorityInterest",
-                        "TotalEquityGrossMinorityInterest", "CashAndCashEquivalents",
-                        "CurrentAssets", "CurrentLiabilities",
-                        "ShortTermDebt", "LongTermDebt"
-                    ]}
-                    for date, row in balance_quarter.items()
-                },
-            }
-
-            # --- Cash Flow (trimmed) ---
-            cash_annual = trim_dict(ticker.get_cash_flow(as_dict=True, freq="yearly"))
-            cash_quarter = trim_dict(ticker.get_cash_flow(as_dict=True, freq="quarterly"), 8)
-
-            cash_filtered = {
-                "annual": {
-                    date: {k: v for k, v in row.items() if k in [
-                        "OperatingCashFlow", "FreeCashFlow",
-                        "CapitalExpenditures", "DepreciationAndAmortization"
-                    ]}
-                    for date, row in cash_annual.items()
-                },
-                "quarterly": {
-                    date: {k: v for k, v in row.items() if k in [
-                        "OperatingCashFlow", "FreeCashFlow",
-                        "CapitalExpenditures", "DepreciationAndAmortization"
-                    ]}
-                    for date, row in cash_quarter.items()
-                },
-            }
-
-            # --- Analyst / Sentiment Data ---
-            analyst_data = {
-                "recommendations_summary": ticker.get_recommendations_summary(as_dict=True),
-                "price_targets": ticker.get_analyst_price_targets(),
-                "growth_estimates": ticker.get_growth_estimates(as_dict=True),
-                "earnings_estimate": ticker.get_earnings_estimate(as_dict=True),
-            }
-
-            # --- Insider sentiment (optional) ---
-            insider_tx = ticker.get_insider_transactions(as_dict=True)
-            if isinstance(insider_tx, list):
-                insider_tx = insider_tx[:10]  # limit to 10 latest
-
-            # --- Dividends (5y) ---
-            dividends = ticker.get_dividends(period="5y").to_dict()
-
-            # --- Assemble final clean dict ---
-            stock_data.update({
-                "income_statement": income_filtered,
-                "balance_sheet": balance_filtered,
-                "cash_flow": cash_filtered,
-                "analyst_data": analyst_data,
-                "insider_transactions": insider_tx,
-                "dividends": dividends,
-            })
-
-            return sanitize(stock_data)
-
-        except Exception as e:
-            print(f"[ERROR] Yahoo fetch failed for {symbol} (attempt {attempt + 1}/{max_retries}): {e}")
-            time.sleep(2 ** attempt)
-
-    # --- If all retries failed ---
-    print(f"[ERROR] Yahoo consistently failed for {symbol} after {max_retries} retries.")
-    return {"symbol": symbol, "error": "Yahoo Finance unavailable"}
-
-def summarize_financials(stock_data: dict) -> dict:
-    """
-    Lightweight summary of essential financial metrics for GPT analysis and dashboards.
-    Keeps only the most recent and meaningful values for fast AI scoring and display.
-    """
+    headers = {
+        "x-rapidapi-key": RAPIDAPI_KEY,
+        "x-rapidapi-host": RAPIDAPI_HOST,
+    }
 
     try:
-        def latest(d: dict, key: str):
-            """Safely get the most recent entry from annual/quarterly data."""
-            section = d.get(key, {})
-            if not section or not isinstance(section, dict):
-                return None
-            return next(iter(section.values()), None)
+        # --- 1️⃣ Profile (sector, industry, country)
+        prof = requests.get(
+            f"https://{RAPIDAPI_HOST}/v1/stock/profile",
+            headers=headers,
+            params={"symbol": symbol},
+            timeout=10,
+        ).json()
+        profile_data = prof.get("quoteSummary", {}).get("result", [{}])[0].get("assetProfile", {})
 
-        info = stock_data.get("info", {})
-        income = stock_data.get("income_statement", {})
-        balance = stock_data.get("balance_sheet", {})
-        cash_flow = stock_data.get("cash_flow", {})
-        analyst = stock_data.get("analyst_data", {})
+        # --- 2️⃣ Financial data (current price, margins, debt)
+        fin = requests.get(
+            f"https://{RAPIDAPI_HOST}/v1/stock/financial-data",
+            headers=headers,
+            params={"symbol": symbol},
+            timeout=10,
+        ).json()
+        fin_data = fin.get("quoteSummary", {}).get("result", [{}])[0].get("financialData", {})
 
-        summary = {
-            "symbol": stock_data.get("symbol"),
-            "company": {
-                "name": info.get("shortName"),
-                "sector": info.get("sector"),
-                "industry": info.get("industry"),
-                "country": info.get("country"),
-                "currency": info.get("currency"),
-                "market_cap": info.get("marketCap"),
+        # --- 3️⃣ Statistics (valuation ratios)
+        stat = requests.get(
+            f"https://{RAPIDAPI_HOST}/v1/stock/statistics",
+            headers=headers,
+            params={"symbol": symbol},
+            timeout=10,
+        ).json()
+        stat_data = stat.get("quoteSummary", {}).get("result", [{}])[0].get("defaultKeyStatistics", {})
+
+        # --- ✅ Merge everything ---
+        return {
+            "symbol": symbol,
+            "info": {
+                "shortName": profile_data.get("longBusinessSummary"),
+                "sector": profile_data.get("sector"),
+                "industry": profile_data.get("industry"),
+                "country": profile_data.get("country"),
+                "marketCap": fin_data.get("marketCap", {}).get("raw"),
+                "trailingPE": stat_data.get("trailingPE", {}).get("raw"),
+                "forwardPE": stat_data.get("forwardPE", {}).get("raw"),
+                "priceToBook": stat_data.get("priceToBook", {}).get("raw"),
+                "dividendYield": fin_data.get("dividendYield", {}).get("raw"),
+                "beta": stat_data.get("beta", {}).get("raw"),
             },
-            "valuation": { 
-                "trailing_pe": info.get("trailingPE"),
-                "forward_pe": info.get("forwardPE"),
-                "peg_ratio": info.get("pegRatio"),
-                "price_to_book": info.get("priceToBook"),
-                "price_to_sales": info.get("priceToSalesTrailing12Months"),
-                "dividend_yield": info.get("dividendYield"),
-                "beta": info.get("beta"),
+            "quote": {
+                "currentPrice": fin_data.get("currentPrice", {}).get("raw"),
+                "targetMeanPrice": fin_data.get("targetMeanPrice", {}).get("raw"),
+                "recommendationMean": fin_data.get("recommendationMean", {}).get("raw"),
             },
-            "income_statement": {
-                "ttm": income.get("ttm"),
-                "latest_annual": latest(income, "annual"),
-                "latest_quarter": latest(income, "quarterly"),
-            },
-            "balance_sheet": {
-                "latest_annual": latest(balance, "annual"),
-                "latest_quarter": latest(balance, "quarterly"),
-            },
-            "cash_flow": {
-                "latest_annual": latest(cash_flow, "annual"),
-                "latest_quarter": latest(cash_flow, "quarterly"),
-            },
-            "balance_summary": {
-                "total_assets": (latest(balance, "annual") or {}).get("TotalAssets"),
-                "total_liabilities": (latest(balance, "annual") or {}).get("TotalLiabilitiesNetMinorityInterest"),
-                "cash": (latest(balance, "annual") or {}).get("CashAndCashEquivalents"),
-                "debt": (
-                    ((latest(balance, "annual") or {}).get("ShortTermDebt") or 0)
-                    + ((latest(balance, "annual") or {}).get("LongTermDebt") or 0)
-                ),
-            },
-            "analyst_data": {
-                "recommendations_summary": analyst.get("recommendations_summary"),
-                "price_targets": analyst.get("price_targets"),
-                "earnings_estimate": analyst.get("earnings_estimate"),
-                "growth_estimates": analyst.get("growth_estimates"),
-            },
+            "source": "yh-finance-rapidapi-basic"
         }
 
-        return summary
-
     except Exception as e:
-        return {"error": str(e)}
+        print(f"⚠️  YH Finance fetch failed for {symbol}: {e}")
+        return {}
+
+
+# =====================================================================
+# 🧩 Main Aggregator (Redis-cached)
+# =====================================================================
+def fetch_stock_financials(symbol: str, force_refresh: bool = False) -> dict:
+    """
+    Robust hybrid financial fetcher combining Finnhub, TwelveData, FMP, yfinance, and YH Finance.
+    Cached in Redis for 24h (from CacheManager presets).
+    """
+    symbol = symbol.upper()
+    cache_key = CacheManager.make_key("stocks", symbol)
+
+    # --- Cache logic ---
+    if not force_refresh:
+        cached = CacheManager.get(cache_key)
+        if cached:
+            print(f"💾  Loaded {symbol} from Redis cache.")
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+    else:
+        print(f"🔄  Force-refreshing {symbol} cache...")
+
+    # --- Fetch fresh data ---
+    merged = {
+        "symbol": symbol,
+        "info": {},
+        "quote": {},
+        "analyst_data": None,
+        "financials": {},
+        "dividends": {},
+        "sources": {},
+    }
+
+    # ------------------------------
+    # 1️⃣ Finnhub — Profile / Quote / Metrics / Recommendations
+    # ------------------------------
+    if FINNHUB_KEY:
+        profile = safe_get(f"{FINNHUB}/stock/profile2", {"symbol": symbol, "token": FINNHUB_KEY}, "Finnhub profile")
+        quote = safe_get(f"{FINNHUB}/quote", {"symbol": symbol, "token": FINNHUB_KEY}, "Finnhub quote")
+        metrics = safe_get(f"{FINNHUB}/stock/metric", {"symbol": symbol, "token": FINNHUB_KEY}, "Finnhub metrics")
+        recs = safe_get(f"{FINNHUB}/stock/recommendation", {"symbol": symbol, "token": FINNHUB_KEY}, "Finnhub recs")
+
+        if profile:
+            merged["info"].update({
+                "shortName": profile.get("name"),
+                "sector": profile.get("finnhubIndustry"),
+                "country": profile.get("country"),
+                "currency": profile.get("currency"),
+            })
+            merged["sources"]["profile"] = "finnhub"
+
+        if metrics:
+            m = metrics.get("metric", {})
+            merged["info"].update({
+                "marketCap": m.get("marketCapitalization"),
+                "trailingPE": m.get("peBasicExclExtraTTM"),
+                "priceToBook": m.get("pbAnnual"),
+                "roe": m.get("roeTTM"),
+                "grossMargin": m.get("grossMarginTTM"),
+            })
+            merged["sources"]["metrics"] = "finnhub"
+
+        if quote:
+            merged["quote"] = quote
+            merged["sources"]["quote"] = "finnhub"
+
+        if recs:
+            merged["analyst_data"] = recs
+            merged["sources"]["analyst_data"] = "finnhub"
+    else:
+        print("⚠️  FINNHUB_API_KEY missing — skipping Finnhub block")
+
+    # ------------------------------
+    # 2️⃣ TwelveData — fallback for quote
+    # ------------------------------
+    if TWELVE_KEY:
+        td_quote = safe_get(f"{TWELVE}/quote", {"symbol": symbol, "apikey": TWELVE_KEY}, "TwelveData quote")
+        if td_quote and not merged["quote"]:
+            merged["quote"] = td_quote
+            merged["sources"]["quote"] = "twelvedata"
+    else:
+        print("⚠️  TWELVE_API_KEY missing — skipping TwelveData block")
+
+    # ------------------------------
+    # 3️⃣ FMP — supplemental ratios + financials
+    # ------------------------------
+    if FMP_KEY:
+        fmp_ratios = safe_get(f"{FMP}/ratios/{symbol}", {"apikey": FMP_KEY}, "FMP ratios")
+        if fmp_ratios and isinstance(fmp_ratios, list):
+            latest = fmp_ratios[0]
+            merged["info"].update({
+                "priceToSales": latest.get("priceToSalesRatio"),
+                "debtToEquity": latest.get("debtEquityRatio"),
+                "dividendYield": latest.get("dividendYield"),
+            })
+            merged["sources"]["ratios"] = "fmp"
+
+        fmp_income = safe_get(f"{FMP}/income-statement/{symbol}", {"limit": 1, "apikey": FMP_KEY}, "FMP income")
+        if fmp_income and isinstance(fmp_income, list):
+            merged["financials"]["income_statement"] = fmp_income[0]
+            merged["sources"]["financials"] = "fmp"
+    else:
+        print("⚠️  FMPSDK_API_KEY missing — skipping FMP block")
+
+    # ------------------------------
+    # 4️⃣ yfinance — dividends fallback
+    # ------------------------------
+    try:
+        ticker = yf.Ticker(symbol)
+        divs = getattr(ticker, "dividends", None)
+        if divs is not None and hasattr(divs, "tail"):
+            dividends = divs.tail(10).to_dict()
+            if dividends:
+                merged["dividends"] = dividends
+                merged["sources"]["dividends"] = "yfinance"
+    except Exception as e:
+        print(f"⚠️  yfinance failed for {symbol}: {e}")
+
+    # ------------------------------
+    # 5️⃣ YH Finance (RapidAPI) — final fallback
+    # ------------------------------
+    yahoo_summary = fetch_yahoo_summary(symbol)
+    if yahoo_summary:
+        merged["info"].update(yahoo_summary.get("info", {}))
+        merged["quote"].update(yahoo_summary.get("quote", {}))
+        merged["financials"].update(yahoo_summary.get("financials", {}))
+        merged["sources"]["yahoo"] = "rapidapi"
+
+    # ------------------------------
+    # ✅ Final summary
+    # ------------------------------
+    filled_fields = sum(1 for v in merged["info"].values() if v)
+    print(f"✅  {symbol}: fetched with {filled_fields} info fields filled.")
+
+    # --- Save in Redis ---
+    CacheManager.set(cache_key, json.dumps(merged))
+    return merged
