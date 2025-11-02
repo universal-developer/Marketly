@@ -1,16 +1,10 @@
 import yfinance as yf
 import datetime
 import math
-from app.utils.sanitizer_util import sanitize
-
-
-import yfinance as yf
-from app.utils.sanitizer_util import sanitize
-
-
-import yfinance as yf
 import time
 from app.utils.sanitizer_util import sanitize
+
+
 
 
 def fetch_stock_financials(symbol: str) -> dict:
@@ -193,7 +187,7 @@ def summarize_financials(stock_data: dict) -> dict:
                 "currency": info.get("currency"),
                 "market_cap": info.get("marketCap"),
             },
-            "valuation": {
+            "valuation": { 
                 "trailing_pe": info.get("trailingPE"),
                 "forward_pe": info.get("forwardPE"),
                 "peg_ratio": info.get("pegRatio"),
