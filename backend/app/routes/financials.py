@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.services.fetchers.financials import fetch_stock_financials
+from app.integrations.financials import fetch_stock_financials
 from app.utils.sanitizer_util import sanitize
 from fastapi.responses import JSONResponse
 
